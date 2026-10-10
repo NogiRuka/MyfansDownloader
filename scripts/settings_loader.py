@@ -74,7 +74,7 @@ def current_settings(config: configparser.ConfigParser) -> Dict[str, object]:
         "filename_separator": os.getenv(
             "FILENAME_SEPARATOR", config.get("Filename", "separator", fallback="_")
         ),
-        "auth_token": os.getenv("AUTH_TOKEN", config.get("Settings", "auth_token", fallback="")),
+        "auth_token": os.getenv("AUTH_TOKEN", ""),
         "thread_count": thread_count(config),
         "write_metadata": os.getenv(
             "WRITE_METADATA", config.get("Settings", "write_metadata", fallback="0")

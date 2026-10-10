@@ -49,9 +49,9 @@ def start_download():
     resolution = data.get("resolution", "best")
 
     if not post_id and not username:
-        return jsonify({"error": "username or post_id is required"}), 400
+        return jsonify({"error": "请输入创作者用户名或作品 ID。"}), 400
     if not download_lock.acquire(blocking=False):
-        return jsonify({"error": "A download is already in progress"}), 409
+        return jsonify({"error": "已有下载任务正在执行，请等待当前任务结束。"}), 409
 
     logger.info(
         "Starting download request - Username: %s, Type: %s, Mode: %s, PostID: %s, Resolution: %s",
@@ -74,7 +74,7 @@ def start_download():
                 resolution=resolution,
             )
         except Exception as exc:
-            error = f"Error in download thread: {exc}"
+            error = f"下载任务发生错误：{exc}"
             logger.exception(error)
             progress_queue.put(error)
             progress_queue.put("DONE")
@@ -166,12 +166,13 @@ def settings_api():
             os.environ["WRITE_METADATA"] = config.get("Settings", "write_metadata")
         token = (data.get("auth_token") or "").strip()
         if token:
-            config.set("Settings", "auth_token", token)
             os.environ["AUTH_TOKEN"] = token
             try:
                 write_auth_token(token)
             except OSError as exc:
-                logger.warning("Could not write header.txt: %s", exc)
+                logger.warning("无法写入 header.txt：%s", exc)
+        if config.has_option("Settings", "auth_token"):
+            config.remove_option("Settings", "auth_token")
         os.environ["FILENAME_PATTERN"] = config.get("Filename", "pattern")
         os.environ["FILENAME_SEPARATOR"] = config.get("Filename", "separator")
         os.environ["THREAD_COUNT"] = config.get("Threads", "threads")

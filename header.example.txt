@@ -1,0 +1,4 @@
+# 复制本文件为 header.txt，再填入你自己的 MyFans 登录令牌。
+# header.txt 已被 Git 忽略，请勿把真实令牌提交到仓库。
+authorization: Token token=YOUR_TOKEN_HERE
+user-agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36

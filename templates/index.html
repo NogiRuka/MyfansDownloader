@@ -1,181 +1,396 @@
 {% extends "base.html" %}
 
+{% block title %}下载中心 · MyFans 下载器{% endblock %}
+
+{% block head %}
+<style>
+    .hero { margin-bottom: 1.6rem; }
+    .hero-copy { max-width: 650px; }
+    .status-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: .45rem;
+        padding: .48rem .8rem;
+        color: #15745a;
+        font-size: .84rem;
+        font-weight: 700;
+        border: 1px solid #c9eee1;
+        border-radius: 999px;
+        background: #effbf7;
+    }
+    .status-dot { width: .5rem; height: .5rem; border-radius: 50%; background: #21b784; box-shadow: 0 0 0 .25rem rgba(33, 183, 132, .12); }
+    .download-card { overflow: hidden; }
+    .form-panel { padding: 1.65rem; }
+    .side-panel {
+        height: 100%;
+        padding: 1.65rem;
+        background: linear-gradient(145deg, rgba(239, 237, 255, .9), rgba(244, 251, 250, .92));
+        border-left: 1px solid var(--line);
+    }
+    .field-note { margin-top: .45rem; color: var(--muted); font-size: .78rem; }
+    .memory-row { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+    .memory-note { color: var(--muted); font-size: .78rem; }
+    .btn-memory { color: var(--brand-deep); font-size: .78rem; font-weight: 700; border: 0; background: transparent; }
+    .progress-card { margin-top: 1.3rem; overflow: hidden; }
+    .progress-head { padding: 1.1rem 1.35rem; border-bottom: 1px solid var(--line); }
+    .progress-log { height: 330px; padding: 1rem 1.2rem; overflow-y: auto; background: #171923; }
+    .log-line { display: flex; gap: .8rem; padding: .32rem 0; color: #d7dbea; font: .84rem/1.55 Consolas, "Microsoft YaHei", monospace; }
+    .log-time { flex: 0 0 auto; color: #858ca3; }
+    .log-empty { display: grid; height: 100%; place-items: center; color: #858ca3; text-align: center; }
+    .feature-item { display: flex; gap: .8rem; margin-bottom: 1rem; }
+    .feature-icon {
+        display: grid;
+        flex: 0 0 auto;
+        width: 2.25rem;
+        height: 2.25rem;
+        place-items: center;
+        color: var(--brand-deep);
+        border-radius: .7rem;
+        background: rgba(255, 255, 255, .78);
+    }
+    @media (max-width: 767.98px) {
+        .side-panel { border-top: 1px solid var(--line); border-left: 0; }
+        .form-panel, .side-panel { padding: 1.2rem; }
+        .progress-log { height: 280px; }
+    }
+</style>
+{% endblock %}
+
 {% block content %}
-<div class="card">
-    <div class="card-body">
-        <h2 class="card-title mb-4">Download Content</h2>
-        <form id="downloadForm">
-            <div class="row">
-                <div class="col-md-6">
-                    <div class="form-group">
-                        <label for="type" class="form-label">Content Type</label>
-                        <select id="type" class="form-select" onchange="updateFormOptions()">
-                            <option value="videos">Videos</option>
-                            <option value="images">Images</option>
-                        </select>
-                    </div>
-
-                    <div class="form-group">
-                        <label for="downloadType" class="form-label">Download Mode</label>
-                        <select id="downloadType" class="form-select" onchange="toggleInputs()">
-                            <option value="bulk">Download All Content</option>
-                            <option value="single">Download Single Item</option>
-                        </select>
-                    </div>
-
-                    <div class="form-group" id="resolutionGroup">
-                        <label for="resolution" class="form-label">Video Quality</label>
-                        <select id="resolution" name="resolution" class="form-select">
-                            <option value="best">Best Available</option>
-                            <option value="uhd">2160p (4K)</option>
-                            <option value="fhd">1080p (Full HD)</option>
-                            <option value="hd">720p (HD)</option>
-                            <option value="sd">480p (SD)</option>
-                            <option value="ld">360p (Low)</option>
-                        </select>
-                    </div>
-                </div>
-
-                <div class="col-md-6" id="bulkDownload">
-                    <div class="form-group">
-                        <label for="username" class="form-label">Username</label>
-                        <input type="text" class="form-control" id="username" placeholder="Enter username (without @)">
-                    </div>
-
-                    <div class="form-group">
-                        <label for="download_type" class="form-label">Content Filter</label>
-                        <select id="download_type" class="form-select">
-                            <option value="all">All Posts</option>
-                            <option value="free">Free Posts Only</option>
-                            <option value="subscribed">Subscribed Posts Only</option>
-                        </select>
-                    </div>
-                </div>
-
-                <div class="col-md-6 hidden" id="singleDownload">
-                    <div class="form-group">
-                        <label for="postId" class="form-label">Post ID</label>
-                        <input type="text" class="form-control" id="postId" placeholder="Enter post ID">
-                    </div>
-                </div>
-            </div>
-
-            <div class="form-group mt-3">
-                <button type="submit" class="btn btn-primary" id="startBtn">Start Download</button>
-            </div>
-        </form>
+<section class="hero d-flex flex-column flex-md-row align-items-md-end justify-content-between gap-3">
+    <div class="hero-copy">
+        <div class="eyebrow mb-2">Download Center</div>
+        <h1 class="page-title display-5 mb-3">下载你可以访问的内容</h1>
+        <p class="text-secondary mb-0">选择创作者或作品 ID，视频与图片会自动整理到对应的创作者目录。</p>
     </div>
-</div>
+    <div class="status-pill"><span class="status-dot"></span><span id="serverStatus">服务已就绪</span></div>
+</section>
 
-<div id="progress" class="progress-log mt-4"></div>
+<section class="glass-card download-card">
+    <div class="row g-0">
+        <div class="col-md-8 form-panel">
+            <form id="downloadForm" novalidate>
+                <div class="row g-3">
+                    <div class="col-sm-6">
+                        <label for="type" class="form-label">内容类型</label>
+                        <select id="type" class="form-select">
+                            <option value="videos">视频</option>
+                            <option value="images">图片</option>
+                        </select>
+                    </div>
+                    <div class="col-sm-6">
+                        <label for="downloadType" class="form-label">下载方式</label>
+                        <select id="downloadType" class="form-select">
+                            <option value="bulk">按创作者批量下载</option>
+                            <option value="single">按作品 ID 下载</option>
+                        </select>
+                    </div>
 
+                    <div class="col-12" id="bulkDownload">
+                        <label for="username" class="form-label">创作者用户名</label>
+                        <input type="text" class="form-control" id="username" list="usernameHistory"
+                               placeholder="不需要输入 @" autocomplete="off">
+                        <datalist id="usernameHistory"></datalist>
+                        <div class="field-note">会记住最近使用过的创作者，方便下次直接选择。</div>
+                    </div>
+
+                    <div class="col-12 hidden" id="singleDownload">
+                        <label for="postId" class="form-label">作品 ID</label>
+                        <input type="text" class="form-control" id="postId" list="postIdHistory"
+                               placeholder="输入 MyFans 作品 ID" autocomplete="off">
+                        <datalist id="postIdHistory"></datalist>
+                        <div class="field-note">作品 ID 可以从作品页面地址中找到。</div>
+                    </div>
+
+                    <div class="col-sm-6" id="filterGroup">
+                        <label for="download_type" class="form-label">内容范围</label>
+                        <select id="download_type" class="form-select">
+                            <option value="all">全部作品</option>
+                            <option value="free">仅免费作品</option>
+                            <option value="subscribed">仅非免费作品</option>
+                        </select>
+                    </div>
+                    <div class="col-sm-6" id="resolutionGroup">
+                        <label for="resolution" class="form-label">视频清晰度</label>
+                        <select id="resolution" name="resolution" class="form-select">
+                            <option value="best">最高可用画质</option>
+                            <option value="uhd">2160p（4K）</option>
+                            <option value="fhd">1080p（全高清）</option>
+                            <option value="hd">720p（高清）</option>
+                            <option value="sd">480p（标清）</option>
+                            <option value="ld">360p（低清）</option>
+                        </select>
+                    </div>
+
+                    <div class="col-12 mt-4">
+                        <button type="submit" class="btn btn-brand w-100" id="startBtn">
+                            <span class="spinner-border spinner-border-sm me-2 d-none" id="startSpinner" aria-hidden="true"></span>
+                            <span id="startBtnText">开始下载</span>
+                        </button>
+                    </div>
+                    <div class="col-12 memory-row">
+                        <span class="memory-note">输入记录只保存在当前浏览器中。</span>
+                        <button class="btn-memory" type="button" id="clearMemoryBtn">清除输入记忆</button>
+                    </div>
+                </div>
+            </form>
+        </div>
+        <aside class="col-md-4 side-panel">
+            <h2 class="h5 fw-bold mb-4">下载说明</h2>
+            <div class="feature-item">
+                <span class="feature-icon">✓</span>
+                <div><strong class="d-block mb-1">自动去重</strong><span class="small text-secondary">已完成的作品会被跳过。</span></div>
+            </div>
+            <div class="feature-item">
+                <span class="feature-icon">HD</span>
+                <div><strong class="d-block mb-1">画质回退</strong><span class="small text-secondary">指定画质不存在时自动选择合适版本。</span></div>
+            </div>
+            <div class="feature-item mb-0">
+                <span class="feature-icon">↳</span>
+                <div><strong class="d-block mb-1">自动归档</strong><span class="small text-secondary">按创作者分别保存视频和图片。</span></div>
+            </div>
+        </aside>
+    </div>
+</section>
+
+<section class="glass-card progress-card">
+    <div class="progress-head d-flex align-items-center justify-content-between gap-3">
+        <div>
+            <h2 class="h6 fw-bold mb-1">运行进度</h2>
+            <p class="small text-secondary mb-0">下载过程和错误信息会实时显示在这里。</p>
+        </div>
+        <button type="button" class="btn btn-sm btn-light border" id="clearLogBtn">清空日志</button>
+    </div>
+    <div id="progress" class="progress-log" role="log" aria-live="polite">
+        <div class="log-empty" id="logEmpty">尚未开始下载</div>
+    </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
 <script>
+    const STORAGE_KEY = 'myfansDownloader.preferences.v1';
+    const MAX_HISTORY = 8;
     let eventSource = null;
 
-    function updateFormOptions() {
-        const contentType = document.getElementById('type').value;
-        const downloadTypeSelect = document.getElementById('downloadType');
-        downloadTypeSelect.options[0].text = contentType === 'videos' ? 'Download All Videos' : 'Download All Images';
-        downloadTypeSelect.options[1].text = contentType === 'videos' ? 'Download Single Video' : 'Download Single Image';
-        document.getElementById('resolutionGroup').classList.toggle('hidden', contentType !== 'videos');
+    const elements = {
+        type: document.getElementById('type'),
+        downloadType: document.getElementById('downloadType'),
+        username: document.getElementById('username'),
+        postId: document.getElementById('postId'),
+        filter: document.getElementById('download_type'),
+        resolution: document.getElementById('resolution')
+    };
+
+    function readPreferences() {
+        try {
+            return JSON.parse(localStorage.getItem(STORAGE_KEY)) || {};
+        } catch (error) {
+            return {};
+        }
     }
 
-    function toggleInputs() {
-        const downloadType = document.getElementById('downloadType').value;
-        document.getElementById('bulkDownload').classList.toggle('hidden', downloadType === 'single');
-        document.getElementById('singleDownload').classList.toggle('hidden', downloadType === 'bulk');
+    function writePreferences(preferences) {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(preferences));
+    }
+
+    function rememberValue(list, value) {
+        const normalized = String(value || '').trim();
+        if (!normalized) return Array.isArray(list) ? list : [];
+        return [normalized, ...(Array.isArray(list) ? list : []).filter(item => item !== normalized)].slice(0, MAX_HISTORY);
+    }
+
+    function renderHistory(id, values) {
+        const datalist = document.getElementById(id);
+        datalist.replaceChildren();
+        (values || []).forEach(value => {
+            const option = document.createElement('option');
+            option.value = value;
+            datalist.appendChild(option);
+        });
+    }
+
+    function saveCurrentPreferences(addHistory = false) {
+        const previous = readPreferences();
+        const preferences = {
+            ...previous,
+            type: elements.type.value,
+            downloadType: elements.downloadType.value,
+            username: elements.username.value.trim(),
+            postId: elements.postId.value.trim(),
+            filter: elements.filter.value,
+            resolution: elements.resolution.value
+        };
+        if (addHistory) {
+            preferences.usernames = rememberValue(previous.usernames, preferences.username);
+            preferences.postIds = rememberValue(previous.postIds, preferences.postId);
+        }
+        writePreferences(preferences);
+        renderHistory('usernameHistory', preferences.usernames);
+        renderHistory('postIdHistory', preferences.postIds);
+    }
+
+    function restorePreferences() {
+        const preferences = readPreferences();
+        const allowed = {
+            type: ['videos', 'images'],
+            downloadType: ['bulk', 'single'],
+            filter: ['all', 'free', 'subscribed'],
+            resolution: ['best', 'uhd', 'fhd', 'hd', 'sd', 'ld']
+        };
+        Object.keys(allowed).forEach(key => {
+            if (allowed[key].includes(preferences[key])) elements[key].value = preferences[key];
+        });
+        elements.username.value = preferences.username || '';
+        elements.postId.value = preferences.postId || '';
+        renderHistory('usernameHistory', preferences.usernames);
+        renderHistory('postIdHistory', preferences.postIds);
+    }
+
+    function refreshForm() {
+        const single = elements.downloadType.value === 'single';
+        const images = elements.type.value === 'images';
+        document.getElementById('bulkDownload').classList.toggle('hidden', single);
+        document.getElementById('singleDownload').classList.toggle('hidden', !single);
+        document.getElementById('filterGroup').classList.toggle('hidden', single);
+        document.getElementById('resolutionGroup').classList.toggle('hidden', images);
+        document.getElementById('startBtnText').textContent = images ? '开始下载图片' : '开始下载视频';
+    }
+
+    function setRunning(running) {
+        document.getElementById('startBtn').disabled = running;
+        document.getElementById('startSpinner').classList.toggle('d-none', !running);
+        document.getElementById('serverStatus').textContent = running ? '正在执行下载任务' : '服务已就绪';
+    }
+
+    function clearLog() {
+        const progress = document.getElementById('progress');
+        progress.replaceChildren();
+        const empty = document.createElement('div');
+        empty.className = 'log-empty';
+        empty.id = 'logEmpty';
+        empty.textContent = '尚未开始下载';
+        progress.appendChild(empty);
     }
 
     function appendLog(text) {
         const progress = document.getElementById('progress');
-        const timestamp = new Date().toLocaleTimeString();
-        progress.innerHTML += `[${timestamp}] ${text}<br>`;
+        document.getElementById('logEmpty')?.remove();
+        const line = document.createElement('div');
+        line.className = 'log-line';
+        const time = document.createElement('span');
+        time.className = 'log-time';
+        time.textContent = new Date().toLocaleTimeString('zh-CN', { hour12: false });
+        const message = document.createElement('span');
+        message.textContent = String(text);
+        line.append(time, message);
+        progress.appendChild(line);
         progress.scrollTop = progress.scrollHeight;
     }
 
-    document.getElementById('downloadForm').onsubmit = async (e) => {
-        e.preventDefault();
-        const startBtn = document.getElementById('startBtn');
-        document.getElementById('progress').innerHTML = '';
-        if (eventSource) {
-            eventSource.close();
-            eventSource = null;
-        }
+    Object.values(elements).forEach(element => {
+        element.addEventListener('change', () => {
+            refreshForm();
+            saveCurrentPreferences();
+        });
+    });
+    elements.username.addEventListener('input', () => saveCurrentPreferences());
+    elements.postId.addEventListener('input', () => saveCurrentPreferences());
 
-        const downloadType = document.getElementById('downloadType').value;
-        const data = downloadType === 'bulk' ? {
-            username: document.getElementById('username').value.trim(),
-            type: document.getElementById('type').value,
-            download_type: document.getElementById('download_type').value,
-            resolution: document.getElementById('resolution').value
-        } : {
-            post_id: document.getElementById('postId').value.trim(),
-            type: document.getElementById('type').value,
+    document.getElementById('clearMemoryBtn').addEventListener('click', () => {
+        localStorage.removeItem(STORAGE_KEY);
+        elements.username.value = '';
+        elements.postId.value = '';
+        renderHistory('usernameHistory', []);
+        renderHistory('postIdHistory', []);
+        appendLog('已清除当前浏览器保存的输入记录。');
+    });
+    document.getElementById('clearLogBtn').addEventListener('click', clearLog);
+
+    document.getElementById('downloadForm').addEventListener('submit', async event => {
+        event.preventDefault();
+        const single = elements.downloadType.value === 'single';
+        const data = single ? {
+            post_id: elements.postId.value.trim(),
+            type: elements.type.value,
             download_type: 'single',
-            resolution: document.getElementById('resolution').value
+            resolution: elements.resolution.value
+        } : {
+            username: elements.username.value.trim(),
+            type: elements.type.value,
+            download_type: elements.filter.value,
+            resolution: elements.resolution.value
         };
-
-        if (downloadType === 'bulk' && !data.username) {
-            appendLog('Username is required');
+        if (!single && !data.username) {
+            appendLog('请输入创作者用户名。');
+            elements.username.focus();
             return;
         }
-        if (downloadType === 'single' && !data.post_id) {
-            appendLog('Post ID is required');
+        if (single && !data.post_id) {
+            appendLog('请输入作品 ID。');
+            elements.postId.focus();
             return;
         }
-
-        startBtn.disabled = true;
-        let response;
+        saveCurrentPreferences(true);
+        if (eventSource) eventSource.close();
+        setRunning(true);
+        appendLog('正在提交下载任务……');
         try {
-            response = await fetch('/download', {
+            const response = await fetch('/download', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(data)
             });
-        } catch (err) {
-            appendLog('Could not reach the download server');
-            startBtn.disabled = false;
-            return;
-        }
-        if (!response.ok) {
-            const error = await response.json().catch(() => ({ error: response.statusText }));
-            appendLog(error.error || 'Failed to start download');
-            startBtn.disabled = false;
+            if (!response.ok) {
+                const error = await response.json().catch(() => ({ error: response.statusText }));
+                appendLog(error.error || '启动下载失败。');
+                setRunning(false);
+                return;
+            }
+        } catch (error) {
+            appendLog('无法连接下载服务，请确认程序仍在运行。');
+            setRunning(false);
             return;
         }
 
         eventSource = new EventSource('/progress');
-        eventSource.onmessage = (event) => {
-            appendLog(event.data);
+        eventSource.onmessage = event => {
             if (event.data === 'DONE') {
+                appendLog('任务执行结束。');
                 eventSource.close();
                 eventSource = null;
-                startBtn.disabled = false;
+                setRunning(false);
+                loadStatus();
+                return;
             }
+            appendLog(event.data);
         };
         eventSource.onerror = () => {
-            if (eventSource) {
-                eventSource.close();
-                eventSource = null;
-            }
-            startBtn.disabled = false;
+            if (eventSource) eventSource.close();
+            eventSource = null;
+            appendLog('进度连接已断开。');
+            setRunning(false);
         };
-    };
-
-    document.addEventListener('DOMContentLoaded', () => {
-        updateFormOptions();
-        loadStatus();
     });
 
     async function loadStatus() {
-        const response = await fetch('/status');
-        const status = await response.json();
-        Object.entries(status.downloads || {}).forEach(([post_id, info]) => {
-            const timestamp = info.last_updated ? new Date(info.last_updated).toLocaleTimeString() : '';
-            const progressText = info.segments_total ?
-                `(${info.segments_downloaded}/${info.segments_total} segments)` : '';
-            appendLog(`Post ${post_id}: ${info.status} ${progressText}`.trim());
-        });
+        try {
+            const response = await fetch('/status');
+            const status = await response.json();
+            const translations = { pending: '等待中', in_progress: '下载中', completed: '已完成', failed: '失败' };
+            Object.entries(status.downloads || {}).forEach(([postId, info]) => {
+                const progressText = info.segments_total ? `（${info.segments_downloaded}/${info.segments_total} 个分片）` : '';
+                appendLog(`作品 ${postId}：${translations[info.status] || info.status} ${progressText}`.trim());
+            });
+        } catch (error) {
+            appendLog('暂时无法读取历史任务状态。');
+        }
     }
+
+    document.addEventListener('DOMContentLoaded', () => {
+        restorePreferences();
+        refreshForm();
+        loadStatus();
+    });
 </script>
 {% endblock %}

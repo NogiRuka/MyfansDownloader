@@ -87,19 +87,19 @@ def process_image_post(
 ) -> bool:
     try:
         if download_state and download_state.is_completed(post_id):
-            emit(progress_queue, f"Skipping already downloaded image post {post_id}")
+            emit(progress_queue, f"图片作品 {post_id} 已下载，跳过。")
             return True
         data = client.get_post(post_id)
         if not post_is_available(data):
-            emit(progress_queue, f"No access to image post {post_id}", "error")
+            emit(progress_queue, f"无法访问图片作品 {post_id}。", "error")
             if download_state:
-                download_state.mark_failed(post_id, "no access")
+                download_state.mark_failed(post_id, "无访问权限")
             return False
         urls = collect_image_urls(data)
         if not urls:
-            emit(progress_queue, f"No images found for post {post_id}", "error")
+            emit(progress_queue, f"作品 {post_id} 中没有找到图片。", "error")
             if download_state:
-                download_state.mark_failed(post_id, "no images")
+                download_state.mark_failed(post_id, "没有找到图片")
             return False
         username = (data.get("user") or {}).get("username") or "unknown"
         folder = os.path.join(output_dir, username, "images")
@@ -114,15 +114,15 @@ def process_image_post(
                 generate_metadata(data, filename, folder, ext.lstrip("."))
                 continue
             if not download_image_bytes(client.session, url, media_headers(client.headers), full_path):
-                raise RuntimeError(f"Empty image download for {url}")
+                raise RuntimeError(f"图片下载结果为空：{url}")
             update_file_date(data, full_path)
             generate_metadata(data, filename, folder, ext.lstrip("."))
-            emit(progress_queue, f"Downloaded image: {filename}")
+            emit(progress_queue, f"图片下载完成：{filename}")
         if download_state:
             download_state.mark_completed(post_id)
         return True
     except Exception as exc:
-        emit(progress_queue, f"Error downloading images for post {post_id}: {exc}", "error")
+        emit(progress_queue, f"下载作品 {post_id} 的图片时出错：{exc}", "error")
         if download_state:
             download_state.mark_failed(post_id, str(exc))
         return False
@@ -144,15 +144,15 @@ def process_video_post(
 ) -> bool:
     try:
         if download_state and download_state.is_completed(post_id):
-            emit(progress_queue, f"Skipping already downloaded video post {post_id}")
+            emit(progress_queue, f"视频作品 {post_id} 已下载，跳过。")
             return True
         if download_state:
             download_state.add_download(post_id, status="in_progress")
         data = client.get_post(post_id)
         if not post_is_available(data):
-            emit(progress_queue, f"No access to post {post_id}", "error")
+            emit(progress_queue, f"无法访问作品 {post_id}。", "error")
             if download_state:
-                download_state.mark_failed(post_id, "no access")
+                download_state.mark_failed(post_id, "无访问权限")
             return False
         try:
             video_payload = client.get_post_videos(post_id)
@@ -162,9 +162,9 @@ def process_video_post(
         main_variants = [item for item in variants if item.get("source") != "trial"]
         chosen = pick_video_variant(main_variants, selected_resolution)
         if not chosen:
-            emit(progress_queue, f"No video URL for post {post_id} (locked or unavailable)", "error")
+            emit(progress_queue, f"作品 {post_id} 没有可用的视频地址，可能尚未解锁。", "error")
             if download_state:
-                download_state.mark_failed(post_id, "no video url")
+                download_state.mark_failed(post_id, "没有可用的视频地址")
             return False
 
         username = (data.get("user") or {}).get("username") or "unknown"
@@ -176,12 +176,12 @@ def process_video_post(
         if os.path.exists(full_path) and verify_video_file(full_path):
             generate_metadata(data, filename, folder)
             update_file_date(data, full_path)
-            emit(progress_queue, f"File already exists and verified: {filename}")
+            emit(progress_queue, f"文件已存在且检查正常：{filename}")
             if download_state:
                 download_state.mark_completed(post_id)
             return True
         if os.path.exists(full_path):
-            emit(progress_queue, f"Corrupted file found, will redownload: {filename}", "warning")
+            emit(progress_queue, f"发现损坏文件，将重新下载：{filename}", "warning")
             try:
                 os.remove(full_path)
             except OSError:
@@ -202,16 +202,16 @@ def process_video_post(
         if success:
             generate_metadata(data, filename, folder)
             update_file_date(data, full_path)
-            emit(progress_queue, f"Successfully downloaded video: {filename}")
+            emit(progress_queue, f"视频下载完成：{filename}")
             if download_state:
                 download_state.mark_completed(post_id)
             return True
-        emit(progress_queue, f"Failed to download video for post {post_id}", "error")
+        emit(progress_queue, f"作品 {post_id} 的视频下载失败。", "error")
         if download_state:
-            download_state.mark_failed(post_id, "download failed")
+            download_state.mark_failed(post_id, "下载失败")
         return False
     except Exception as exc:
-        emit(progress_queue, f"Error processing post {post_id}: {exc}", "error")
+        emit(progress_queue, f"处理作品 {post_id} 时出错：{exc}", "error")
         if download_state:
             download_state.mark_failed(post_id, str(exc))
         return False
@@ -256,9 +256,9 @@ def download_videos_concurrently(
     headers = headers or read_headers_from_file("header.txt")
     client = MyFansClient(headers=headers, session=session)
     total = len(post_ids)
-    emit(progress_queue, f"Starting download of {total} video posts...")
+    emit(progress_queue, f"准备下载 {total} 个视频作品。")
     workers = max(1, int(max_workers or 1))
-    progress_bar = tqdm(total=total, desc="Downloading videos", unit="video")
+    progress_bar = tqdm(total=total, desc="下载视频", unit="个")
     if workers == 1:
         for post_id in post_ids:
             process_video_post(
@@ -292,10 +292,10 @@ def download_videos_concurrently(
                 try:
                     future.result()
                 except Exception as exc:
-                    emit(progress_queue, f"An error occurred during download: {exc}", "error")
+                    emit(progress_queue, f"下载过程中发生错误：{exc}", "error")
                 progress_bar.update(1)
     progress_bar.close()
-    emit(progress_queue, "Download process completed")
+    emit(progress_queue, "视频下载流程已结束。")
 
 
 def download_images_concurrently(
@@ -311,8 +311,8 @@ def download_images_concurrently(
     headers = headers or read_headers_from_file("header.txt")
     client = MyFansClient(headers=headers, session=session)
     total = len(post_ids)
-    emit(progress_queue, f"Starting download of {total} image posts...")
-    progress_bar = tqdm(total=total, desc="Downloading images", unit="post")
+    emit(progress_queue, f"准备下载 {total} 个图片作品。")
+    progress_bar = tqdm(total=total, desc="下载图片", unit="个")
     workers = max(1, int(max_workers or 1))
     if workers == 1:
         for post_id in post_ids:
@@ -333,10 +333,10 @@ def download_images_concurrently(
                 try:
                     future.result()
                 except Exception as exc:
-                    emit(progress_queue, f"An error occurred during download: {exc}", "error")
+                    emit(progress_queue, f"下载过程中发生错误：{exc}", "error")
                 progress_bar.update(1)
     progress_bar.close()
-    emit(progress_queue, "Image download process completed")
+    emit(progress_queue, "图片下载流程已结束。")
 
 
 def download_single_file(session, post_id, selected_resolution, output_dir, filename_config):
@@ -363,7 +363,7 @@ def start_download(
         if not has_auth_token(headers):
             emit(
                 progress_queue,
-                "Warning: no authorization token set. Only free/public content will download.",
+                "提醒：尚未设置登录令牌，只能下载免费或公开内容。",
                 "warning",
             )
         session = requests.Session()
@@ -373,7 +373,7 @@ def start_download(
         resolution = normalize_resolution(resolution or "best")
 
         if post_id:
-            emit(progress_queue, f"Starting download for post ID: {post_id}")
+            emit(progress_queue, f"开始处理作品：{post_id}")
             if post_type == "images":
                 process_image_post(
                     post_id, client, output_dir, filename_config, progress_queue, download_state
@@ -391,32 +391,34 @@ def start_download(
             return
 
         if not username:
-            emit(progress_queue, "Error: username is required for bulk downloads", "error")
+            emit(progress_queue, "批量下载需要填写创作者用户名。", "error")
             return
 
-        emit(progress_queue, f"Starting download for user: {username}, type: {post_type}, mode: {download_type}")
+        type_name = "图片" if post_type == "images" else "视频"
+        emit(progress_queue, f"开始获取创作者 {username} 的{type_name}作品。")
         try:
             user = client.get_user_by_username(username)
         except requests.HTTPError as exc:
             status = getattr(exc.response, "status_code", None)
             if status in (401, 403):
-                emit(progress_queue, "API returned 401/403. Check the token in header.txt.", "error")
+                emit(progress_queue, "MyFans 拒绝了访问，请检查设置中的登录令牌。", "error")
                 return
             raise
         user_id = user.get("id")
         if not user_id:
-            emit(progress_queue, "Failed to retrieve user ID. Check the username and token.", "error")
+            emit(progress_queue, "无法获取创作者信息，请检查用户名和登录令牌。", "error")
             return
-        emit(progress_queue, f"Found user ID: {user_id}")
+        emit(progress_queue, f"已找到创作者，用户 ID：{user_id}")
 
         kind = "image" if post_type == "images" else "video"
-        emit(progress_queue, f"Fetching {kind} posts...")
+        kind_name = "图片" if kind == "image" else "视频"
+        emit(progress_queue, f"正在获取{kind_name}作品列表……")
         posts = _list_posts(client, user, kind)
         posts = _filter_posts(posts, download_type)
-        emit(progress_queue, f"Total {kind} posts matched: {len(posts)}")
+        emit(progress_queue, f"共有 {len(posts)} 个{kind_name}作品符合条件。")
         post_ids = [post.get("id") for post in posts if post.get("id")]
         if not post_ids:
-            emit(progress_queue, "No posts match the selected criteria.")
+            emit(progress_queue, "没有符合当前条件的作品。")
             return
         if kind == "video":
             download_videos_concurrently(
@@ -442,7 +444,7 @@ def start_download(
                 headers=headers,
             )
     except Exception as exc:
-        emit(progress_queue, f"Error: {exc}", "error")
+        emit(progress_queue, f"任务执行失败：{exc}", "error")
     finally:
         if progress_queue is not None:
             progress_queue.put("DONE")

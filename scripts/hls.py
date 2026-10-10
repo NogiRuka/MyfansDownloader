@@ -191,7 +191,7 @@ def python_hls_download(
     session = thread_session(headers)
     playlist, playlist_url = resolve_media_playlist(session, url, headers, requested_height)
     if _playlist_is_encrypted(playlist):
-        _notify(progress, "Playlist is encrypted; using ffmpeg")
+        _notify(progress, "检测到加密播放列表，改用 FFmpeg 下载。")
         return ffmpeg_download(playlist_url, output_file, headers)
 
     output_folder = os.path.dirname(output_file) or "."
@@ -212,7 +212,7 @@ def python_hls_download(
                 handle.write(resp.content)
 
         total = len(playlist.segments)
-        _notify(progress, f"Downloading {total} segments for {post_id}")
+        _notify(progress, f"作品 {post_id} 共需下载 {total} 个视频分片。")
         results: List[Optional[str]] = [None] * total
 
         def download_one(index: int, segment: m3u8.Segment) -> Tuple[int, Optional[str]]:
@@ -248,11 +248,11 @@ def python_hls_download(
                 done += 1
                 if done % 50 == 0 or done == total:
                     ok = len([item for item in results if item])
-                    _notify(progress, f"Progress: {done}/{total} segments ({ok} ok)")
+                    _notify(progress, f"分片进度：{done}/{total}，成功 {ok} 个。")
 
         valid = [path for path in results if path]
         if len(valid) != total:
-            raise RuntimeError(f"Incomplete HLS download: {len(valid)}/{total} segments")
+            raise RuntimeError(f"HLS 分片不完整：成功 {len(valid)}/{total} 个")
 
         ts_path = os.path.join(temp_root, "joined.ts")
         with open(ts_path, "wb") as outfile:
@@ -294,7 +294,7 @@ def download_stream(
     if not url:
         return False
     if os.path.exists(output_file) and verify_video_file(output_file):
-        _notify(progress, f"Verified existing file: {os.path.basename(output_file)}")
+        _notify(progress, f"已有文件检查正常：{os.path.basename(output_file)}")
         return True
     if os.path.exists(output_file):
         try:
@@ -305,10 +305,10 @@ def download_stream(
     last_error = None
     for attempt in range(max_retries):
         try:
-            _notify(progress, f"Downloading video {post_id} (attempt {attempt + 1}/{max_retries})")
+            _notify(progress, f"正在下载视频 {post_id}（第 {attempt + 1}/{max_retries} 次尝试）")
             if ffmpeg_download(url, output_file, headers):
                 return True
-            _notify(progress, "ffmpeg download failed, trying Python HLS downloader")
+            _notify(progress, "FFmpeg 直接下载失败，改用 Python HLS 分片下载。")
             if python_hls_download(
                 url,
                 output_file,
@@ -323,7 +323,7 @@ def download_stream(
             last_error = exc
             logger.error("Download attempt %s failed: %s", attempt + 1, exc)
             if progress:
-                progress(f"Download attempt {attempt + 1} failed: {exc}")
+                progress(f"第 {attempt + 1} 次下载失败：{exc}")
             time.sleep(2)
     if last_error:
         logger.error("Giving up on %s: %s", post_id, last_error)

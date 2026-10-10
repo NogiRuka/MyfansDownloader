@@ -20,12 +20,12 @@ class FlaskRouteTests(unittest.TestCase):
     def test_index_ok(self):
         resp = self.client.get("/")
         self.assertEqual(resp.status_code, 200)
-        self.assertIn(b"Download Content", resp.data)
+        self.assertIn("下载你可以访问的内容", resp.get_data(as_text=True))
 
     def test_settings_page_is_html_not_json(self):
         resp = self.client.get("/settings")
         self.assertEqual(resp.status_code, 200)
-        self.assertIn(b"Settings", resp.data)
+        self.assertIn("下载设置", resp.get_data(as_text=True))
         self.assertFalse(resp.is_json)
 
     def test_settings_api_json(self):

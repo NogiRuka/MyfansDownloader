@@ -8,4 +8,6 @@ api_exploration_*.json
 *.log
 download_state.json
 .pytest_cache/
+.playwright-cli/
 ffmpeg.zip
+header.txt

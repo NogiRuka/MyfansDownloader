@@ -48,7 +48,7 @@ class StartDownloadDoneTests(unittest.TestCase):
         while not queue.empty():
             items.append(queue.get_nowait())
         self.assertEqual(items[-1], "DONE")
-        self.assertTrue(any("username is required" in str(item).lower() for item in items))
+        self.assertTrue(any("创作者用户名" in str(item) for item in items))
 
 
 class LauncherTests(unittest.TestCase):
