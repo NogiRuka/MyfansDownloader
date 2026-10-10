@@ -17,6 +17,8 @@ Download videos and images from [myfans.jp](https://myfans.jp) that your account
 
 On Windows you can run `SETUP.bat` once to install Python and dependencies, then `MyfansDownloader.bat` to start.
 
+中文用户可以直接双击 `启动网页端.bat`。程序会启动本地网页服务，并在服务就绪后自动打开浏览器；关闭命令窗口即可停止服务。
+
 ## Set your token
 
 Paid and members-only posts need the `_mfans_token` cookie from myfans.jp after you sign in.
