@@ -10,8 +10,15 @@ import requests
 import scripts.myfans_dl as downloader
 from scripts.api import MyFansClient, has_auth_token, read_headers_from_file, write_auth_token
 from scripts.download_state import DownloadState
+from scripts.filename_utils import generate_filename, read_filename_config
 from scripts.paths import ensure_dir, log_file_path
-from scripts.settings_loader import current_settings, load_config, organization_settings, save_config
+from scripts.settings_loader import (
+    current_settings,
+    load_config,
+    organization_settings,
+    output_directory,
+    save_config,
+)
 from scripts.utils import get_post_date
 
 log_path = log_file_path()
@@ -152,7 +159,10 @@ def creator_posts():
         session.headers.update(headers)
         client = MyFansClient(headers=headers, session=session)
         posts = downloader.list_creator_posts(client, username, post_type, download_type)
-        organization = organization_settings(load_config())
+        config = load_config()
+        organization = organization_settings(config)
+        filename_config = read_filename_config(config)
+        video_root = os.path.join(output_directory(config), username, "videos")
         plan = downloader.build_season_plan(
             posts,
             enabled=bool(organization["season_enabled"]),
@@ -168,7 +178,26 @@ def creator_posts():
             post = entry["post"]
             post_id = str(post.get("id") or "")
             detail = downloads.get(post_id) or {}
-            status = "completed" if post_id in completed else detail.get("status", "pending")
+            status = detail.get("status", "pending")
+            if post_type == "videos":
+                filename = generate_filename(post, filename_config, video_root, ext=".mp4")
+                expected_paths = []
+                recorded_path = detail.get("file_path")
+                if recorded_path:
+                    expected_paths.append(recorded_path)
+                if entry["folder"]:
+                    expected_paths.append(os.path.join(video_root, entry["folder"], filename))
+                expected_paths.append(os.path.join(video_root, filename))
+                file_exists = any(
+                    os.path.isfile(path) and os.path.getsize(path) > 0 for path in expected_paths
+                )
+                if file_exists:
+                    status = "completed"
+                elif post_id in completed or status == "completed":
+                    download_state.mark_missing(post_id)
+                    status = "pending"
+            elif post_id in completed:
+                status = "completed"
             title = ""
             for key in ("title", "body", "content", "name"):
                 value = post.get(key)

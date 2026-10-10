@@ -42,6 +42,20 @@ class DownloadStateTests(unittest.TestCase):
             snapshot["completed_files"].append("mutated")
             self.assertNotIn("mutated", state.get_serializable_state()["completed_files"])
 
+    def test_missing_file_resets_completed_status(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            state = DownloadState(state_dir=tmp)
+            video_path = Path(tmp) / "video.mp4"
+            state.add_download("abc", status="in_progress")
+            state.mark_completed("abc", video_path)
+
+            state.mark_missing("abc")
+
+            snapshot = state.get_serializable_state()
+            self.assertNotIn("abc", snapshot["completed_files"])
+            self.assertEqual(snapshot["downloads"]["abc"]["status"], "pending")
+            self.assertNotIn("file_path", snapshot["downloads"]["abc"])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -327,7 +327,7 @@ def process_video_post(
             if download_poster:
                 download_video_poster(data, chosen, full_path, client, progress_queue)
             if download_state:
-                download_state.mark_completed(post_id)
+                download_state.mark_completed(post_id, full_path)
             return True
         if os.path.exists(full_path):
             emit(progress_queue, f"发现损坏文件，将重新下载：{filename}", "warning")
@@ -355,7 +355,7 @@ def process_video_post(
             if download_poster:
                 download_video_poster(data, chosen, full_path, client, progress_queue)
             if download_state:
-                download_state.mark_completed(post_id)
+                download_state.mark_completed(post_id, full_path)
             return True
         emit(progress_queue, f"作品 {post_id} 的视频下载失败。", "error")
         if download_state:

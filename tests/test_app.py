@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -8,6 +9,8 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
+
+from scripts.download_state import DownloadState
 
 
 class FlaskRouteTests(unittest.TestCase):
@@ -60,6 +63,34 @@ class FlaskRouteTests(unittest.TestCase):
         payload = resp.get_json()
         self.assertEqual([item["id"] for item in payload["items"]], ["1", "2"])
         self.assertEqual(payload["items"][0]["folder"], "S01")
+
+    def test_creator_posts_resets_completed_status_when_video_was_deleted(self):
+        posts = [
+            {
+                "id": "deleted-video",
+                "title": "已删除的视频",
+                "published_at": "2024-01-01T00:00:00Z",
+            }
+        ]
+        with tempfile.TemporaryDirectory() as tmp:
+            state = DownloadState(state_dir=tmp)
+            state.add_download("deleted-video", status="in_progress")
+            state.mark_completed("deleted-video", Path(tmp) / "missing.mp4")
+            with patch("app.read_headers_from_file", return_value={"user-agent": "test"}), patch(
+                "app.MyFansClient"
+            ), patch("app.downloader.list_creator_posts", return_value=posts), patch(
+                "app.download_state", state
+            ), patch(
+                "app.output_directory", return_value=tmp
+            ), patch(
+                "app.read_filename_config",
+                return_value={"pattern": "{date} {title}", "separator": "_"},
+            ):
+                resp = self.client.get("/api/creator-posts?username=creator&type=videos")
+
+            self.assertEqual(resp.status_code, 200)
+            self.assertEqual(resp.get_json()["items"][0]["status"], "pending")
+            self.assertFalse(state.is_completed("deleted-video"))
 
 
 if __name__ == "__main__":

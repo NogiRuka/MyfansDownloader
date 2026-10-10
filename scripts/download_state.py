@@ -72,14 +72,31 @@ class DownloadState:
             entry["last_updated"] = datetime.now().isoformat()
             self.save_state()
 
-    def mark_completed(self, post_id):
+    def mark_completed(self, post_id, file_path=None):
         with self._lock:
             post_id = str(post_id)
             if post_id in self.state["downloads"]:
                 self.state["downloads"][post_id]["status"] = "completed"
                 self.state["downloads"][post_id]["last_updated"] = datetime.now().isoformat()
+                if file_path:
+                    self.state["downloads"][post_id]["file_path"] = os.path.abspath(file_path)
             self.state["completed_files"].add(post_id)
             self.save_state()
+
+    def mark_missing(self, post_id):
+        """清除已经不存在于硬盘上的视频完成记录。"""
+        with self._lock:
+            post_id = str(post_id)
+            changed = post_id in self.state["completed_files"]
+            self.state["completed_files"].discard(post_id)
+            entry = self.state["downloads"].get(post_id)
+            if entry and entry.get("status") == "completed":
+                entry["status"] = "pending"
+                entry["last_updated"] = datetime.now().isoformat()
+                entry.pop("file_path", None)
+                changed = True
+            if changed:
+                self.save_state()
 
     def mark_failed(self, post_id, error):
         with self._lock:
