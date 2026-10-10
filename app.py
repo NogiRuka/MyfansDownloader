@@ -8,10 +8,11 @@ from queue import Empty, Queue
 import requests
 
 import scripts.myfans_dl as downloader
-from scripts.api import has_auth_token, read_headers_from_file, write_auth_token
+from scripts.api import MyFansClient, has_auth_token, read_headers_from_file, write_auth_token
 from scripts.download_state import DownloadState
 from scripts.paths import ensure_dir, log_file_path
-from scripts.settings_loader import current_settings, load_config, save_config
+from scripts.settings_loader import current_settings, load_config, organization_settings, save_config
+from scripts.utils import get_post_date
 
 log_path = log_file_path()
 ensure_dir(log_path.parent)
@@ -47,6 +48,7 @@ def start_download():
     download_type = data.get("download_type", "all")
     post_id = (data.get("post_id") or "").strip() or None
     resolution = data.get("resolution", "best")
+    season_number = data.get("season_number")
 
     if not post_id and not username:
         return jsonify({"error": "请输入创作者用户名或作品 ID。"}), 400
@@ -72,6 +74,7 @@ def start_download():
                 download_state,
                 post_id=post_id,
                 resolution=resolution,
+                season_number=season_number,
             )
         except Exception as exc:
             error = f"下载任务发生错误：{exc}"
@@ -136,6 +139,73 @@ def test_post(post_id):
         return jsonify({"error": str(exc)}), 500
 
 
+@app.route("/api/creator-posts")
+def creator_posts():
+    username = (request.args.get("username") or "").strip().lstrip("@")
+    post_type = request.args.get("type", "videos")
+    download_type = request.args.get("download_type", "all")
+    if not username:
+        return jsonify({"error": "请输入创作者用户名。"}), 400
+    try:
+        headers = read_headers_from_file("header.txt")
+        session = requests.Session()
+        session.headers.update(headers)
+        client = MyFansClient(headers=headers, session=session)
+        posts = downloader.list_creator_posts(client, username, post_type, download_type)
+        organization = organization_settings(load_config())
+        plan = downloader.build_season_plan(
+            posts,
+            enabled=bool(organization["season_enabled"]),
+            size=int(organization["season_size"]),
+            pattern=str(organization["season_pattern"]),
+            order=str(organization["season_order"]),
+        )
+        state = download_state.get_serializable_state()
+        completed = set(state.get("completed_files") or [])
+        downloads = state.get("downloads") or {}
+        items = []
+        for entry in plan:
+            post = entry["post"]
+            post_id = str(post.get("id") or "")
+            detail = downloads.get(post_id) or {}
+            status = "completed" if post_id in completed else detail.get("status", "pending")
+            title = ""
+            for key in ("title", "body", "content", "name"):
+                value = post.get(key)
+                if isinstance(value, str) and value.strip():
+                    title = value.strip().splitlines()[0]
+                    break
+            date = get_post_date(post)
+            items.append(
+                {
+                    "id": post_id,
+                    "title": title or post_id,
+                    "published_at": date.isoformat() if date else "",
+                    "free": bool(post.get("free")),
+                    "status": status,
+                    "season_number": entry["season_number"],
+                    "folder": entry["folder"],
+                }
+            )
+        return jsonify(
+            {
+                "username": username,
+                "total": len(items),
+                "completed": sum(1 for item in items if item["status"] == "completed"),
+                "season_enabled": bool(organization["season_enabled"]),
+                "items": items,
+            }
+        )
+    except FileNotFoundError:
+        return jsonify({"error": "尚未配置 header.txt，请先在设置中填写 MyFans 令牌。"}), 400
+    except requests.HTTPError as exc:
+        status = getattr(exc.response, "status_code", None)
+        message = "MyFans 拒绝了访问，请检查登录令牌。" if status in (401, 403) else str(exc)
+        return jsonify({"error": message}), 400
+    except (requests.RequestException, ValueError) as exc:
+        return jsonify({"error": str(exc)}), 400
+
+
 @app.route("/settings", methods=["GET", "POST"])
 def settings():
     if request.method == "POST":
@@ -154,6 +224,8 @@ def settings_api():
             config.add_section("Threads")
         if not config.has_section("Settings"):
             config.add_section("Settings")
+        if not config.has_section("Organization"):
+            config.add_section("Organization")
         config.set("Filename", "pattern", str(data.get("filename_pattern") or "{date} {title}"))
         config.set("Filename", "separator", str(data.get("filename_separator") or "_"))
         try:
@@ -164,6 +236,19 @@ def settings_api():
         if "write_metadata" in data:
             config.set("Settings", "write_metadata", "1" if data.get("write_metadata") else "0")
             os.environ["WRITE_METADATA"] = config.get("Settings", "write_metadata")
+        if "download_poster" in data:
+            config.set("Settings", "download_poster", "1" if data.get("download_poster") else "0")
+            os.environ["DOWNLOAD_POSTER"] = config.get("Settings", "download_poster")
+        config.set("Organization", "season_enabled", "1" if data.get("season_enabled", True) else "0")
+        pattern = str(data.get("season_pattern") or "S{number:02d}").strip()
+        config.set("Organization", "season_pattern", pattern)
+        try:
+            season_size = max(1, int(data.get("season_size") or 20))
+        except (TypeError, ValueError):
+            season_size = 20
+        config.set("Organization", "season_size", str(season_size))
+        order = str(data.get("season_order") or "oldest").strip().lower()
+        config.set("Organization", "season_order", order if order in {"oldest", "newest"} else "oldest")
         token = (data.get("auth_token") or "").strip()
         if token:
             os.environ["AUTH_TOKEN"] = token
@@ -176,6 +261,10 @@ def settings_api():
         os.environ["FILENAME_PATTERN"] = config.get("Filename", "pattern")
         os.environ["FILENAME_SEPARATOR"] = config.get("Filename", "separator")
         os.environ["THREAD_COUNT"] = config.get("Threads", "threads")
+        os.environ["SEASON_ENABLED"] = config.get("Organization", "season_enabled")
+        os.environ["SEASON_PATTERN"] = config.get("Organization", "season_pattern")
+        os.environ["SEASON_SIZE"] = config.get("Organization", "season_size")
+        os.environ["SEASON_ORDER"] = config.get("Organization", "season_order")
         save_config(config)
         return jsonify({"status": "success"})
 

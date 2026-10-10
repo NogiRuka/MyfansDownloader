@@ -48,6 +48,18 @@
         border-radius: .7rem;
         background: rgba(255, 255, 255, .78);
     }
+    .works-card { margin-top: 1.3rem; overflow: hidden; }
+    .works-head { padding: 1.2rem 1.35rem; border-bottom: 1px solid var(--line); }
+    .works-summary { color: var(--muted); font-size: .85rem; }
+    .works-table-wrap { max-height: 520px; overflow: auto; }
+    .works-table { margin: 0; font-size: .86rem; }
+    .works-table th { position: sticky; top: 0; z-index: 1; white-space: nowrap; background: #f8f9fc; }
+    .work-title { min-width: 260px; max-width: 460px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .status-badge { display: inline-block; padding: .25rem .55rem; border-radius: 999px; font-size: .75rem; font-weight: 700; white-space: nowrap; }
+    .status-pending { color: #667085; background: #eef0f4; }
+    .status-in_progress { color: #8a5b00; background: #fff4cf; }
+    .status-completed { color: #15745a; background: #e4f8f0; }
+    .status-failed { color: #b42318; background: #feeceb; }
     @media (max-width: 767.98px) {
         .side-panel { border-top: 1px solid var(--line); border-left: 0; }
         .form-panel, .side-panel { padding: 1.2rem; }
@@ -91,7 +103,10 @@
                         <input type="text" class="form-control" id="username" list="usernameHistory"
                                placeholder="不需要输入 @" autocomplete="off">
                         <datalist id="usernameHistory"></datalist>
-                        <div class="field-note">会记住最近使用过的创作者，方便下次直接选择。</div>
+                        <div class="d-flex flex-column flex-sm-row align-items-sm-center justify-content-between gap-2 mt-2">
+                            <div class="field-note mt-0">会记住最近使用过的创作者，方便下次直接选择。</div>
+                            <button type="button" class="btn btn-sm btn-light border" id="loadPostsBtn">查看作品列表</button>
+                        </div>
                     </div>
 
                     <div class="col-12 hidden" id="singleDownload">
@@ -120,6 +135,14 @@
                             <option value="sd">480p（标清）</option>
                             <option value="ld">360p（低清）</option>
                         </select>
+                    </div>
+                    <div class="col-12" id="seasonGroup">
+                        <label for="seasonNumber" class="form-label">本次下载分卷</label>
+                        <select id="seasonNumber" class="form-select">
+                            <option value="1">S01（前 20 个作品）</option>
+                            <option value="all">全部分卷</option>
+                        </select>
+                        <div class="field-note">先查看作品列表可显示准确的分卷名称和作品数量。</div>
                     </div>
 
                     <div class="col-12 mt-4">
@@ -153,6 +176,26 @@
     </div>
 </section>
 
+<section class="glass-card works-card" id="worksCard">
+    <div class="works-head d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-2">
+        <div>
+            <h2 class="h6 fw-bold mb-1">创作者作品列表</h2>
+            <p class="works-summary mb-0" id="worksSummary">输入创作者用户名后，点击“查看作品列表”。</p>
+        </div>
+        <button type="button" class="btn btn-sm btn-light border" id="refreshPostsBtn">刷新列表</button>
+    </div>
+    <div class="works-table-wrap">
+        <table class="table table-hover align-middle works-table">
+            <thead>
+                <tr><th>分卷</th><th>发布时间</th><th>作品标题</th><th>范围</th><th>状态</th></tr>
+            </thead>
+            <tbody id="worksBody">
+                <tr><td colspan="5" class="py-5 text-center text-secondary">尚未读取作品</td></tr>
+            </tbody>
+        </table>
+    </div>
+</section>
+
 <section class="glass-card progress-card">
     <div class="progress-head d-flex align-items-center justify-content-between gap-3">
         <div>
@@ -179,7 +222,8 @@
         username: document.getElementById('username'),
         postId: document.getElementById('postId'),
         filter: document.getElementById('download_type'),
-        resolution: document.getElementById('resolution')
+        resolution: document.getElementById('resolution'),
+        season: document.getElementById('seasonNumber')
     };
 
     function readPreferences() {
@@ -219,7 +263,8 @@
             username: elements.username.value.trim(),
             postId: elements.postId.value.trim(),
             filter: elements.filter.value,
-            resolution: elements.resolution.value
+            resolution: elements.resolution.value,
+            season: elements.season.value
         };
         if (addHistory) {
             preferences.usernames = rememberValue(previous.usernames, preferences.username);
@@ -243,6 +288,7 @@
         });
         elements.username.value = preferences.username || '';
         elements.postId.value = preferences.postId || '';
+        if (preferences.season) elements.season.value = preferences.season;
         renderHistory('usernameHistory', preferences.usernames);
         renderHistory('postIdHistory', preferences.postIds);
     }
@@ -254,6 +300,7 @@
         document.getElementById('singleDownload').classList.toggle('hidden', !single);
         document.getElementById('filterGroup').classList.toggle('hidden', single);
         document.getElementById('resolutionGroup').classList.toggle('hidden', images);
+        document.getElementById('seasonGroup').classList.toggle('hidden', single || images);
         document.getElementById('startBtnText').textContent = images ? '开始下载图片' : '开始下载视频';
     }
 
@@ -307,6 +354,88 @@
     });
     document.getElementById('clearLogBtn').addEventListener('click', clearLog);
 
+    function statusLabel(status) {
+        return ({ pending: '未下载', in_progress: '下载中', completed: '已下载', failed: '失败' })[status] || status;
+    }
+
+    async function loadCreatorPosts() {
+        const username = elements.username.value.trim();
+        if (!username) {
+            appendLog('请输入创作者用户名后再读取作品列表。');
+            elements.username.focus();
+            return;
+        }
+        const button = document.getElementById('loadPostsBtn');
+        button.disabled = true;
+        document.getElementById('worksSummary').textContent = '正在读取创作者作品，请稍候……';
+        try {
+            const params = new URLSearchParams({
+                username,
+                type: elements.type.value,
+                download_type: elements.filter.value
+            });
+            const response = await fetch(`/api/creator-posts?${params}`);
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok) throw new Error(data.error || '读取作品列表失败');
+
+            const counts = new Map();
+            data.items.forEach(item => counts.set(item.season_number, (counts.get(item.season_number) || 0) + 1));
+            const seasonSelect = elements.season;
+            seasonSelect.replaceChildren();
+            [...counts.entries()].forEach(([number, count]) => {
+                const first = data.items.find(item => item.season_number === number);
+                const option = document.createElement('option');
+                option.value = String(number);
+                option.textContent = `${first?.folder || `第 ${number} 卷`}（${count} 个）`;
+                seasonSelect.appendChild(option);
+            });
+            const allOption = document.createElement('option');
+            allOption.value = 'all';
+            allOption.textContent = `全部分卷（${data.total} 个）`;
+            seasonSelect.appendChild(allOption);
+            if (!data.items.length) seasonSelect.value = 'all';
+
+            const body = document.getElementById('worksBody');
+            body.replaceChildren();
+            data.items.forEach(item => {
+                const row = document.createElement('tr');
+                const folder = document.createElement('td');
+                folder.textContent = item.folder || '视频目录';
+                const date = document.createElement('td');
+                date.textContent = item.published_at ? item.published_at.slice(0, 10) : '未知';
+                const title = document.createElement('td');
+                title.className = 'work-title';
+                title.textContent = item.title;
+                title.title = item.title;
+                const scope = document.createElement('td');
+                scope.textContent = item.free ? '免费' : '非免费';
+                const status = document.createElement('td');
+                const badge = document.createElement('span');
+                badge.className = `status-badge status-${item.status}`;
+                badge.textContent = statusLabel(item.status);
+                status.appendChild(badge);
+                row.append(folder, date, title, scope, status);
+                body.appendChild(row);
+            });
+            if (!data.items.length) {
+                const row = document.createElement('tr');
+                row.innerHTML = '<td colspan="5" class="py-5 text-center text-secondary">没有符合当前条件的作品</td>';
+                body.appendChild(row);
+            }
+            document.getElementById('worksSummary').textContent =
+                `共 ${data.total} 个作品，已下载 ${data.completed} 个，未下载 ${data.total - data.completed} 个。`;
+            saveCurrentPreferences(true);
+        } catch (error) {
+            document.getElementById('worksSummary').textContent = `读取失败：${error.message}`;
+            appendLog(`读取作品列表失败：${error.message}`);
+        } finally {
+            button.disabled = false;
+        }
+    }
+
+    document.getElementById('loadPostsBtn').addEventListener('click', loadCreatorPosts);
+    document.getElementById('refreshPostsBtn').addEventListener('click', loadCreatorPosts);
+
     document.getElementById('downloadForm').addEventListener('submit', async event => {
         event.preventDefault();
         const single = elements.downloadType.value === 'single';
@@ -319,7 +448,8 @@
             username: elements.username.value.trim(),
             type: elements.type.value,
             download_type: elements.filter.value,
-            resolution: elements.resolution.value
+            resolution: elements.resolution.value,
+            season_number: elements.season.value
         };
         if (!single && !data.username) {
             appendLog('请输入创作者用户名。');
@@ -361,6 +491,7 @@
                 eventSource = null;
                 setRunning(false);
                 loadStatus();
+                loadCreatorPosts();
                 return;
             }
             appendLog(event.data);

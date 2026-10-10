@@ -46,6 +46,17 @@ class StartDownloadDoneTests(unittest.TestCase):
             myfans_dl, "has_auth_token", return_value=False
         ), patch.object(
             myfans_dl, "thread_count", return_value=1
+        ), patch.object(
+            myfans_dl, "download_poster_enabled", return_value=True
+        ), patch.object(
+            myfans_dl,
+            "organization_settings",
+            return_value={
+                "season_enabled": True,
+                "season_pattern": "S{number:02d}",
+                "season_size": 20,
+                "season_order": "oldest",
+            },
         ):
             myfans_dl.start_download("", "videos", "all", queue)
         items = []
@@ -53,6 +64,41 @@ class StartDownloadDoneTests(unittest.TestCase):
             items.append(queue.get_nowait())
         self.assertEqual(items[-1], "DONE")
         self.assertTrue(any("创作者用户名" in str(item) for item in items))
+
+    def test_start_download_only_sends_selected_season(self):
+        from scripts import myfans_dl
+
+        posts = [
+            {"id": str(index), "published_at": f"2024-01-{index + 1:02d}T00:00:00Z"}
+            for index in range(25)
+        ]
+        queue = Queue()
+        client = MagicMock()
+        client.get_user_by_username.return_value = {"id": "creator-id"}
+        organization = {
+            "season_enabled": True,
+            "season_pattern": "S{number:02d}",
+            "season_size": 20,
+            "season_order": "oldest",
+        }
+        with patch.object(myfans_dl, "load_config", return_value=MagicMock()), patch.object(
+            myfans_dl, "output_directory", return_value="downloads"
+        ), patch.object(myfans_dl, "read_filename_config", return_value={"pattern": "{id}"}), patch.object(
+            myfans_dl, "validate_filename_config", return_value=True
+        ), patch.object(myfans_dl, "read_headers_from_file", return_value={"user-agent": "test"}), patch.object(
+            myfans_dl, "has_auth_token", return_value=True
+        ), patch.object(myfans_dl, "thread_count", return_value=1), patch.object(
+            myfans_dl, "download_poster_enabled", return_value=True
+        ), patch.object(myfans_dl, "organization_settings", return_value=organization), patch.object(
+            myfans_dl, "MyFansClient", return_value=client
+        ), patch.object(myfans_dl, "_list_posts", return_value=posts), patch.object(
+            myfans_dl, "download_videos_concurrently"
+        ) as download_mock:
+            myfans_dl.start_download("creator", "videos", "all", queue, season_number=2)
+
+        args, kwargs = download_mock.call_args
+        self.assertEqual(args[1], ["20", "21", "22", "23", "24"])
+        self.assertEqual(set(kwargs["post_folders"].values()), {"S02"})
 
 
 class LauncherTests(unittest.TestCase):
@@ -72,6 +118,32 @@ class AccessLogicTests(unittest.TestCase):
 
 
 class VideoPosterTests(unittest.TestCase):
+    def test_disabled_poster_setting_skips_poster_download(self):
+        from scripts import myfans_dl
+
+        client = MagicMock()
+        client.get_post.return_value = {"id": "1", "user": {"username": "creator"}}
+        client.get_post_videos.return_value = {"main": [{"url": "https://cdn.example/video.m3u8"}]}
+
+        with tempfile.TemporaryDirectory() as tmp:
+            video_folder = Path(tmp) / "creator" / "videos"
+            video_folder.mkdir(parents=True)
+            (video_folder / "1.mp4").write_bytes(b"video")
+            with patch.object(myfans_dl, "verify_video_file", return_value=True), patch.object(
+                myfans_dl, "download_video_poster"
+            ) as poster_mock:
+                result = myfans_dl.process_video_post(
+                    "1",
+                    client,
+                    "best",
+                    tmp,
+                    {"pattern": "{id}"},
+                    download_poster=False,
+                )
+
+        self.assertTrue(result)
+        poster_mock.assert_not_called()
+
     def test_poster_uses_video_filename(self):
         from scripts import myfans_dl
 
@@ -137,6 +209,27 @@ class VideoPosterTests(unittest.TestCase):
             with Image.open(destination) as converted:
                 self.assertEqual(converted.format, "JPEG")
                 self.assertEqual(converted.mode, "RGB")
+
+
+class SeasonPlanTests(unittest.TestCase):
+    def test_oldest_posts_are_grouped_into_first_season(self):
+        from scripts.myfans_dl import build_season_plan
+
+        posts = [
+            {"id": "new", "published_at": "2024-03-01T00:00:00Z"},
+            {"id": "old", "published_at": "2024-01-01T00:00:00Z"},
+            {"id": "middle", "published_at": "2024-02-01T00:00:00Z"},
+        ]
+        plan = build_season_plan(posts, size=2, pattern="S{number:02d}", order="oldest")
+
+        self.assertEqual([item["post"]["id"] for item in plan], ["old", "middle", "new"])
+        self.assertEqual([item["folder"] for item in plan], ["S01", "S01", "S02"])
+
+    def test_custom_season_name_adds_number_placeholder(self):
+        from scripts.myfans_dl import build_season_plan
+
+        plan = build_season_plan([{"id": "1"}], pattern="第", size=20)
+        self.assertEqual(plan[0]["folder"], "第01")
 
 
 if __name__ == "__main__":

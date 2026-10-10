@@ -33,9 +33,18 @@ from scripts.filename_utils import (
     validate_filename_config,
 )
 from scripts.hls import download_stream
-from scripts.settings_loader import load_config, output_directory, segment_thread_count, thread_count
+from scripts.settings_loader import (
+    download_poster_enabled,
+    load_config,
+    organization_settings,
+    output_directory,
+    segment_thread_count,
+    thread_count,
+)
 from scripts.utils import (
+    clean_filename,
     emit,
+    get_post_date,
     height_for_resolution,
     normalize_resolution,
     pick_video_variant,
@@ -69,6 +78,62 @@ def _list_posts(client: MyFansClient, user: Dict[str, Any], kind: str) -> List[D
         if post.get("kind") == kind or not post.get("kind"):
             posts.append(post)
     return posts
+
+
+def list_creator_posts(
+    client: MyFansClient,
+    username: str,
+    post_type: str = "videos",
+    download_type: str = "all",
+) -> List[Dict[str, Any]]:
+    """读取并筛选创作者作品列表。"""
+
+    user = client.get_user_by_username(username)
+    if not user.get("id"):
+        raise ValueError("无法获取创作者信息，请检查用户名和登录令牌。")
+    kind = "image" if post_type == "images" else "video"
+    return _filter_posts(_list_posts(client, user, kind), download_type)
+
+
+def _season_folder_name(pattern: str, number: int) -> str:
+    """根据用户模板生成安全的分卷目录名。"""
+
+    template = (pattern or "S{number:02d}").strip()
+    if "{number" not in template:
+        template = f"{template}{{number:02d}}"
+    try:
+        name = template.format(number=number)
+    except (KeyError, ValueError):
+        name = f"S{number:02d}"
+    return clean_filename(name, max_length=60)
+
+
+def build_season_plan(
+    posts: List[Dict[str, Any]],
+    enabled: bool = True,
+    size: int = 20,
+    pattern: str = "S{number:02d}",
+    order: str = "oldest",
+) -> List[Dict[str, Any]]:
+    """按发布时间排序作品，并为每个作品分配分卷目录。"""
+
+    dated = [post for post in posts if get_post_date(post) is not None]
+    undated = [post for post in posts if get_post_date(post) is None]
+    reverse = str(order).lower() == "newest"
+    dated.sort(key=lambda post: get_post_date(post).timestamp(), reverse=reverse)
+    ordered = dated + undated
+    group_size = max(1, int(size or 20))
+    plan = []
+    for index, post in enumerate(ordered):
+        number = index // group_size + 1
+        plan.append(
+            {
+                "post": post,
+                "season_number": number,
+                "folder": _season_folder_name(pattern, number) if enabled else None,
+            }
+        )
+    return plan
 
 
 def download_image_bytes(session: requests.Session, url: str, headers: Dict[str, str], dest: str) -> bool:
@@ -222,6 +287,8 @@ def process_video_post(
     filename_config: Dict[str, str],
     progress_queue=None,
     download_state=None,
+    target_subfolder: Optional[str] = None,
+    download_poster: bool = True,
 ) -> bool:
     try:
         if download_state:
@@ -247,6 +314,8 @@ def process_video_post(
 
         username = (data.get("user") or {}).get("username") or "unknown"
         folder = os.path.join(output_dir, username, "videos")
+        if target_subfolder:
+            folder = os.path.join(folder, clean_filename(target_subfolder, max_length=60))
         os.makedirs(folder, exist_ok=True)
         filename = generate_filename(data, filename_config, folder, ext=".mp4")
         full_path = os.path.join(folder, filename)
@@ -255,7 +324,8 @@ def process_video_post(
             generate_metadata(data, filename, folder)
             update_file_date(data, full_path)
             emit(progress_queue, f"文件已存在且检查正常：{filename}")
-            download_video_poster(data, chosen, full_path, client, progress_queue)
+            if download_poster:
+                download_video_poster(data, chosen, full_path, client, progress_queue)
             if download_state:
                 download_state.mark_completed(post_id)
             return True
@@ -282,7 +352,8 @@ def process_video_post(
             generate_metadata(data, filename, folder)
             update_file_date(data, full_path)
             emit(progress_queue, f"视频下载完成：{filename}")
-            download_video_poster(data, chosen, full_path, client, progress_queue)
+            if download_poster:
+                download_video_poster(data, chosen, full_path, client, progress_queue)
             if download_state:
                 download_state.mark_completed(post_id)
             return True
@@ -332,6 +403,8 @@ def download_videos_concurrently(
     max_workers=1,
     download_state=None,
     headers=None,
+    post_folders=None,
+    download_poster=True,
 ):
     headers = headers or read_headers_from_file("header.txt")
     client = MyFansClient(headers=headers, session=session)
@@ -349,6 +422,8 @@ def download_videos_concurrently(
                 filename_config,
                 progress_queue,
                 download_state,
+                target_subfolder=(post_folders or {}).get(str(post_id)),
+                download_poster=download_poster,
             )
             progress_bar.update(1)
     else:
@@ -364,6 +439,8 @@ def download_videos_concurrently(
                 filename_config,
                 progress_queue,
                 download_state,
+                target_subfolder=(post_folders or {}).get(str(post_id)),
+                download_poster=download_poster,
             )
 
         with ThreadPoolExecutor(max_workers=workers) as executor:
@@ -433,6 +510,7 @@ def start_download(
     download_state=None,
     post_id=None,
     resolution="best",
+    season_number=None,
 ):
     try:
         config = load_config()
@@ -450,6 +528,8 @@ def start_download(
         session.headers.update(headers)
         client = MyFansClient(headers=headers, session=session)
         workers = thread_count(config)
+        download_poster = download_poster_enabled(config)
+        organization = organization_settings(config)
         resolution = normalize_resolution(resolution or "best")
 
         if post_id:
@@ -467,6 +547,7 @@ def start_download(
                     filename_config,
                     progress_queue,
                     download_state,
+                    download_poster=download_poster,
                 )
             return
 
@@ -493,9 +574,30 @@ def start_download(
         kind = "image" if post_type == "images" else "video"
         kind_name = "图片" if kind == "image" else "视频"
         emit(progress_queue, f"正在获取{kind_name}作品列表……")
-        posts = _list_posts(client, user, kind)
-        posts = _filter_posts(posts, download_type)
+        posts = _filter_posts(_list_posts(client, user, kind), download_type)
         emit(progress_queue, f"共有 {len(posts)} 个{kind_name}作品符合条件。")
+        post_folders = {}
+        if kind == "video":
+            plan = build_season_plan(
+                posts,
+                enabled=bool(organization["season_enabled"]),
+                size=int(organization["season_size"]),
+                pattern=str(organization["season_pattern"]),
+                order=str(organization["season_order"]),
+            )
+            if organization["season_enabled"] and season_number not in (None, "", "all"):
+                try:
+                    selected_season = max(1, int(season_number))
+                except (TypeError, ValueError):
+                    selected_season = 1
+                plan = [item for item in plan if item["season_number"] == selected_season]
+                emit(progress_queue, f"本次只下载第 {selected_season} 卷，共 {len(plan)} 个作品。")
+            posts = [item["post"] for item in plan]
+            post_folders = {
+                str(item["post"].get("id")): item["folder"]
+                for item in plan
+                if item["post"].get("id") and item["folder"]
+            }
         post_ids = [post.get("id") for post in posts if post.get("id")]
         if not post_ids:
             emit(progress_queue, "没有符合当前条件的作品。")
@@ -511,6 +613,8 @@ def start_download(
                 max_workers=workers,
                 download_state=download_state,
                 headers=headers,
+                post_folders=post_folders,
+                download_poster=download_poster,
             )
         else:
             download_images_concurrently(
