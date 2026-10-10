@@ -154,7 +154,7 @@ def settings_api():
             config.add_section("Threads")
         if not config.has_section("Settings"):
             config.add_section("Settings")
-        config.set("Filename", "pattern", str(data.get("filename_pattern") or "{creator}_{date}_{id}"))
+        config.set("Filename", "pattern", str(data.get("filename_pattern") or "{date} {title}"))
         config.set("Filename", "separator", str(data.get("filename_separator") or "_"))
         try:
             threads = max(1, int(data.get("thread_count") or 3))

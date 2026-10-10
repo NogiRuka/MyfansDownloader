@@ -12,7 +12,7 @@ from scripts.utils import clean_filename, get_post_date
 filename_lock = Lock()
 generated_filenames = set()
 
-DEFAULT_PATTERN = "{creator}_{date}_{id}"
+DEFAULT_PATTERN = "{date} {title}"
 DEFAULT_SEPARATOR = "_"
 
 
@@ -69,7 +69,7 @@ def generate_filename(
     username = (post.get("user") or {}).get("username") or "unknown"
     post_id = str(post.get("id") or "unknown")
     date_obj = get_post_date(post)
-    post_date = date_obj.strftime("%Y-%m-%d") if date_obj else "unknown_date"
+    post_date = date_obj.strftime("%Y%m%d") if date_obj else "unknown_date"
     title = clean_filename(_post_title(post), max_length=max_length)
 
     if ext and not ext.startswith("."):

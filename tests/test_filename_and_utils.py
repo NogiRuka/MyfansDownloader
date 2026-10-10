@@ -17,6 +17,7 @@ if str(ROOT) not in sys.path:
 from helpers.deps import MIN_PYTHON, parse_requirement_name
 from scripts.api import (
     collect_image_urls,
+    find_video_poster_url,
     media_headers,
     normalize_auth_token,
     parse_header_lines,
@@ -71,24 +72,24 @@ class FilenameTests(unittest.TestCase):
                 {"pattern": "{creator}_{date}_{id}", "separator": "_"},
                 tmp,
             )
-            self.assertEqual(name, "creator_2024-01-02_abc-123.mp4")
+            self.assertEqual(name, "creator_20240102_abc-123.mp4")
 
     def test_deterministic_when_file_exists(self):
         post = {"id": "1", "published_at": "2024-01-02T00:00:00Z", "user": {"username": "u"}}
         with tempfile.TemporaryDirectory() as tmp:
-            existing = Path(tmp) / "u_2024-01-02_1.mp4"
+            existing = Path(tmp) / "u_20240102_1.mp4"
             existing.write_bytes(b"x")
             name = generate_filename(
                 post,
                 {"pattern": "{creator}_{date}_{id}", "separator": "_"},
                 tmp,
             )
-            self.assertEqual(name, "u_2024-01-02_1.mp4")
+            self.assertEqual(name, "u_20240102_1.mp4")
 
     def test_unique_true_suffixes_collisions(self):
         post = {"id": "1", "published_at": "2024-01-02T00:00:00Z", "user": {"username": "u"}}
         with tempfile.TemporaryDirectory() as tmp:
-            existing = Path(tmp) / "u_2024-01-02_1.mp4"
+            existing = Path(tmp) / "u_20240102_1.mp4"
             existing.write_bytes(b"x")
             name = generate_filename(
                 post,
@@ -96,7 +97,18 @@ class FilenameTests(unittest.TestCase):
                 tmp,
                 unique=True,
             )
-            self.assertEqual(name, "u_2024-01-02_1_1.mp4")
+            self.assertEqual(name, "u_20240102_1_1.mp4")
+
+    def test_default_pattern_uses_compact_date_and_title(self):
+        post = {
+            "id": "1",
+            "published_at": "2024-12-05T00:00:00Z",
+            "title": "title",
+            "user": {"username": "u"},
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            name = generate_filename(post, {}, tmp)
+        self.assertEqual(name, "20241205 title.mp4")
 
     def test_metadata_json_escapes_content(self):
         post = {
@@ -180,6 +192,17 @@ class ImageUrlTests(unittest.TestCase):
         self.assertEqual(
             collect_image_urls(post),
             ["https://cdn/a.jpg", "https://cdn/b.jpg"],
+        )
+
+    def test_video_poster_prefers_selected_video_image(self):
+        video = {"image_url": "https://cdn/video-cover.jpg"}
+        post = {"thumbnail_url": "https://cdn/post-thumbnail.jpg"}
+        self.assertEqual(find_video_poster_url(video, post), "https://cdn/video-cover.jpg")
+
+    def test_video_poster_falls_back_to_post_thumbnail(self):
+        self.assertEqual(
+            find_video_poster_url({}, {"thumbnail_url": "https://cdn/post-thumbnail.jpg"}),
+            "https://cdn/post-thumbnail.jpg",
         )
 
 

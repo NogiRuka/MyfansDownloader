@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from queue import Queue
@@ -65,6 +66,28 @@ class AccessLogicTests(unittest.TestCase):
         old_blocked = post.get("free") is False and not post.get("subscribed")
         self.assertTrue(old_blocked)
         self.assertTrue(post_is_available(post))
+
+
+class VideoPosterTests(unittest.TestCase):
+    def test_poster_uses_video_filename(self):
+        from scripts import myfans_dl
+
+        post = {"id": "1", "published_at": "2024-12-05T00:00:00Z"}
+        video = {"image_url": "https://cdn.example/cover.jpg"}
+        client = MagicMock()
+
+        with tempfile.TemporaryDirectory() as tmp:
+            video_path = str(Path(tmp) / "20241205 title.mp4")
+
+            def write_poster(_session, _url, _headers, destination):
+                Path(destination).write_bytes(b"poster")
+                return True
+
+            with patch.object(myfans_dl, "download_image_bytes", side_effect=write_poster):
+                downloaded = myfans_dl.download_video_poster(post, video, video_path, client)
+
+            self.assertTrue(downloaded)
+            self.assertTrue((Path(tmp) / "20241205 title-poster.jpg").is_file())
 
 
 if __name__ == "__main__":

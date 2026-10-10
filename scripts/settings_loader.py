@@ -20,7 +20,7 @@ def load_config() -> configparser.ConfigParser:
         config.set("Settings", "output_dir", str(downloads_dir()))
     if not config.has_section("Filename"):
         config.add_section("Filename")
-        config.set("Filename", "pattern", os.getenv("FILENAME_PATTERN", "{creator}_{date}_{id}"))
+        config.set("Filename", "pattern", os.getenv("FILENAME_PATTERN", "{date} {title}"))
         config.set("Filename", "separator", os.getenv("FILENAME_SEPARATOR", "_"))
         config.set("Filename", "numbers", "")
         config.set("Filename", "letters", "")
@@ -69,7 +69,7 @@ def segment_thread_count() -> int:
 def current_settings(config: configparser.ConfigParser) -> Dict[str, object]:
     return {
         "filename_pattern": os.getenv(
-            "FILENAME_PATTERN", config.get("Filename", "pattern", fallback="{creator}_{date}_{id}")
+            "FILENAME_PATTERN", config.get("Filename", "pattern", fallback="{date} {title}")
         ),
         "filename_separator": os.getenv(
             "FILENAME_SEPARATOR", config.get("Filename", "separator", fallback="_")

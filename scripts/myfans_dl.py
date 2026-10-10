@@ -16,6 +16,7 @@ from tqdm import tqdm
 from scripts.api import (
     MyFansClient,
     collect_image_urls,
+    find_video_poster_url,
     get_video_info,
     has_auth_token,
     media_headers,
@@ -75,6 +76,45 @@ def download_image_bytes(session: requests.Session, url: str, headers: Dict[str,
     with open(dest, "wb") as handle:
         handle.write(response.content)
     return os.path.getsize(dest) > 0
+
+
+def download_video_poster(
+    post: Dict[str, Any],
+    video: Dict[str, Any],
+    video_path: str,
+    client: MyFansClient,
+    progress_queue=None,
+) -> bool:
+    """下载视频封面，并使用“视频名-poster”作为文件名。"""
+
+    poster_url = find_video_poster_url(video, post)
+    if not poster_url:
+        emit(progress_queue, f"作品 {post.get('id', '')} 没有找到封面。", "warning")
+        return False
+
+    extension = _extension_from_url(poster_url)
+    video_stem = os.path.splitext(os.path.basename(video_path))[0]
+    poster_path = os.path.join(os.path.dirname(video_path), f"{video_stem}-poster{extension}")
+    if os.path.exists(poster_path) and os.path.getsize(poster_path) > 0:
+        update_file_date(post, poster_path)
+        emit(progress_queue, f"封面已存在：{os.path.basename(poster_path)}")
+        return True
+
+    try:
+        downloaded = download_image_bytes(
+            client.session,
+            poster_url,
+            media_headers(client.headers),
+            poster_path,
+        )
+        if not downloaded:
+            raise OSError("下载结果为空")
+        update_file_date(post, poster_path)
+        emit(progress_queue, f"封面下载完成：{os.path.basename(poster_path)}")
+        return True
+    except (OSError, requests.RequestException) as exc:
+        emit(progress_queue, f"封面下载失败，但视频不受影响：{exc}", "warning")
+        return False
 
 
 def process_image_post(
@@ -143,9 +183,6 @@ def process_video_post(
     download_state=None,
 ) -> bool:
     try:
-        if download_state and download_state.is_completed(post_id):
-            emit(progress_queue, f"视频作品 {post_id} 已下载，跳过。")
-            return True
         if download_state:
             download_state.add_download(post_id, status="in_progress")
         data = client.get_post(post_id)
@@ -177,6 +214,7 @@ def process_video_post(
             generate_metadata(data, filename, folder)
             update_file_date(data, full_path)
             emit(progress_queue, f"文件已存在且检查正常：{filename}")
+            download_video_poster(data, chosen, full_path, client, progress_queue)
             if download_state:
                 download_state.mark_completed(post_id)
             return True
@@ -203,6 +241,7 @@ def process_video_post(
             generate_metadata(data, filename, folder)
             update_file_date(data, full_path)
             emit(progress_queue, f"视频下载完成：{filename}")
+            download_video_poster(data, chosen, full_path, client, progress_queue)
             if download_state:
                 download_state.mark_completed(post_id)
             return True

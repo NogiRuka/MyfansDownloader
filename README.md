@@ -10,6 +10,7 @@
 - 指定画质不存在时自动选择合适的可用画质；
 - 下载普通作品、可访问的 Back Number 和套餐作品；
 - 下载一个图片作品中的全部图片；
+- 下载视频封面，并保存为“视频名-poster”；
 - 按免费、非免费或全部作品筛选；
 - 按创作者自动整理视频和图片目录；
 - 检查已有视频，避免重复下载损坏文件；
@@ -90,7 +91,8 @@ user-agent: Mozilla/5.0
 downloads/
 └─ 创作者用户名/
    ├─ videos/
-   │  └─ 视频文件.mp4
+   │  ├─ 20241205 title.mp4
+   │  └─ 20241205 title-poster.jpg
    └─ images/
       └─ 图片文件.jpg
 ```
@@ -101,7 +103,7 @@ downloads/
 
 | 设置 | 默认值 | 说明 |
 | --- | --- | --- |
-| 文件名模板 | `{creator}_{date}_{id}` | 控制下载文件名称 |
+| 文件名模板 | `{date} {title}` | 例如 `20241205 title.mp4` |
 | 替换分隔符 | `_` | 替换文件名中的路径分隔符 |
 | 同时下载作品数 | `3` | 同时处理多少个作品 |
 | JSON 元数据 | 关闭 | 为每个媒体文件生成元数据 |
@@ -119,7 +121,7 @@ downloads/
 例如：
 
 ```ini
-pattern = {date}_{title}_{id}
+pattern = {date} {title}
 ```
 
 ## 配置文件
@@ -131,7 +133,7 @@ pattern = {date}_{title}_{id}
 output_dir = downloads
 
 [Filename]
-pattern = {creator}_{date}_{id}
+pattern = {date} {title}
 separator = _
 
 [Threads]
