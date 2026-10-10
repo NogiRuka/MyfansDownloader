@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import sys
+from io import BytesIO
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse
@@ -11,6 +12,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 import requests
+from PIL import Image, ImageOps
 from tqdm import tqdm
 
 from scripts.api import (
@@ -78,6 +80,29 @@ def download_image_bytes(session: requests.Session, url: str, headers: Dict[str,
     return os.path.getsize(dest) > 0
 
 
+def download_image_as_jpeg(
+    session: requests.Session,
+    url: str,
+    headers: Dict[str, str],
+    dest: str,
+) -> bool:
+    """下载图片并统一转换为 JPEG，透明区域使用白色背景。"""
+
+    response = session.get(url, headers=headers, timeout=60)
+    response.raise_for_status()
+    os.makedirs(os.path.dirname(dest) or ".", exist_ok=True)
+    with Image.open(BytesIO(response.content)) as source:
+        image = ImageOps.exif_transpose(source)
+        if image.mode in {"RGBA", "LA"} or "transparency" in image.info:
+            rgba = image.convert("RGBA")
+            converted = Image.new("RGB", rgba.size, "white")
+            converted.paste(rgba, mask=rgba.getchannel("A"))
+        else:
+            converted = image.convert("RGB")
+        converted.save(dest, format="JPEG", quality=95, optimize=True)
+    return os.path.getsize(dest) > 0
+
+
 def download_video_poster(
     post: Dict[str, Any],
     video: Dict[str, Any],
@@ -92,9 +117,8 @@ def download_video_poster(
         emit(progress_queue, f"作品 {post.get('id', '')} 没有找到封面。", "warning")
         return False
 
-    extension = _extension_from_url(poster_url)
     video_stem = os.path.splitext(os.path.basename(video_path))[0]
-    poster_path = os.path.join(os.path.dirname(video_path), f"{video_stem}-poster{extension}")
+    poster_path = os.path.join(os.path.dirname(video_path), f"{video_stem}-poster.jpg")
     if os.path.exists(poster_path) and os.path.getsize(poster_path) > 0:
         _remove_stale_poster_files(video_path, poster_path)
         update_file_date(post, poster_path)
@@ -102,7 +126,7 @@ def download_video_poster(
         return True
 
     try:
-        downloaded = download_image_bytes(
+        downloaded = download_image_as_jpeg(
             client.session,
             poster_url,
             media_headers(client.headers),

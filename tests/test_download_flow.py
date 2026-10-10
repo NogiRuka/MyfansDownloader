@@ -3,9 +3,12 @@ from __future__ import annotations
 import sys
 import tempfile
 import unittest
+from io import BytesIO
 from pathlib import Path
 from queue import Queue
 from unittest.mock import MagicMock, patch
+
+from PIL import Image
 
 ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
@@ -84,7 +87,7 @@ class VideoPosterTests(unittest.TestCase):
                 Path(destination).write_bytes(b"poster")
                 return True
 
-            with patch.object(myfans_dl, "download_image_bytes", side_effect=write_poster):
+            with patch.object(myfans_dl, "download_image_as_jpeg", side_effect=write_poster):
                 downloaded = myfans_dl.download_video_poster(post, video, video_path, client)
 
             self.assertTrue(downloaded)
@@ -105,12 +108,35 @@ class VideoPosterTests(unittest.TestCase):
                 Path(destination).write_bytes(b"correct")
                 return True
 
-            with patch.object(myfans_dl, "download_image_bytes", side_effect=write_poster):
+            with patch.object(myfans_dl, "download_image_as_jpeg", side_effect=write_poster):
                 downloaded = myfans_dl.download_video_poster(post, {}, video_path, client)
 
             self.assertTrue(downloaded)
             self.assertFalse(old_poster.exists())
-            self.assertTrue((Path(tmp) / "20241205 title-poster.webp").is_file())
+            self.assertTrue((Path(tmp) / "20241205 title-poster.jpg").is_file())
+
+    def test_webp_poster_is_converted_to_jpeg(self):
+        from scripts import myfans_dl
+
+        image_bytes = BytesIO()
+        Image.new("RGBA", (4, 3), (255, 0, 0, 128)).save(image_bytes, format="WEBP")
+        response = MagicMock(content=image_bytes.getvalue())
+        session = MagicMock()
+        session.get.return_value = response
+
+        with tempfile.TemporaryDirectory() as tmp:
+            destination = Path(tmp) / "video-poster.jpg"
+            downloaded = myfans_dl.download_image_as_jpeg(
+                session,
+                "https://cdn.example/cover.webp",
+                {},
+                str(destination),
+            )
+
+            self.assertTrue(downloaded)
+            with Image.open(destination) as converted:
+                self.assertEqual(converted.format, "JPEG")
+                self.assertEqual(converted.mode, "RGB")
 
 
 if __name__ == "__main__":
