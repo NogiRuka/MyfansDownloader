@@ -283,14 +283,16 @@ def collect_image_urls(post: Dict[str, Any]) -> List[str]:
 def find_video_poster_url(video: Dict[str, Any], post: Dict[str, Any]) -> Optional[str]:
     """从视频变体和作品详情中选择最合适的封面地址。"""
 
-    direct_keys = ("image_url", "thumbnail_url", "poster_url", "cover_url")
-    for payload in (video, post):
-        if not isinstance(payload, dict):
-            continue
-        for key in direct_keys:
-            value = payload.get(key)
-            if isinstance(value, str) and value.strip():
-                return value.strip()
+    # 视频变体的 image_url 可能只是黑色水印占位图，作品缩略图才是网页展示的封面。
+    for key in ("thumbnail_url", "poster_url", "cover_url"):
+        value = post.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+
+    for key in ("thumbnail_url", "poster_url", "cover_url", "image_url"):
+        value = video.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
 
     nested_keys = ("post_image", "thumbnail", "poster", "cover")
     nested_url_keys = ("url", "file_url", "raw_image_url", "square_thumbnail_url")

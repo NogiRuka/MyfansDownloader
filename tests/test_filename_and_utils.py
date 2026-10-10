@@ -194,15 +194,15 @@ class ImageUrlTests(unittest.TestCase):
             ["https://cdn/a.jpg", "https://cdn/b.jpg"],
         )
 
-    def test_video_poster_prefers_selected_video_image(self):
+    def test_video_poster_prefers_post_thumbnail(self):
         video = {"image_url": "https://cdn/video-cover.jpg"}
         post = {"thumbnail_url": "https://cdn/post-thumbnail.jpg"}
-        self.assertEqual(find_video_poster_url(video, post), "https://cdn/video-cover.jpg")
+        self.assertEqual(find_video_poster_url(video, post), "https://cdn/post-thumbnail.jpg")
 
-    def test_video_poster_falls_back_to_post_thumbnail(self):
+    def test_video_poster_falls_back_to_video_image(self):
         self.assertEqual(
-            find_video_poster_url({}, {"thumbnail_url": "https://cdn/post-thumbnail.jpg"}),
-            "https://cdn/post-thumbnail.jpg",
+            find_video_poster_url({"image_url": "https://cdn/video-cover.jpg"}, {}),
+            "https://cdn/video-cover.jpg",
         )
 
 

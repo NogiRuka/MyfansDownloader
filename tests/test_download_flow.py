@@ -73,7 +73,8 @@ class VideoPosterTests(unittest.TestCase):
         from scripts import myfans_dl
 
         post = {"id": "1", "published_at": "2024-12-05T00:00:00Z"}
-        video = {"image_url": "https://cdn.example/cover.jpg"}
+        video = {"image_url": "https://cdn.example/placeholder.png"}
+        post["thumbnail_url"] = "https://cdn.example/cover.jpg"
         client = MagicMock()
 
         with tempfile.TemporaryDirectory() as tmp:
@@ -88,6 +89,28 @@ class VideoPosterTests(unittest.TestCase):
 
             self.assertTrue(downloaded)
             self.assertTrue((Path(tmp) / "20241205 title-poster.jpg").is_file())
+
+    def test_new_poster_removes_old_generated_image(self):
+        from scripts import myfans_dl
+
+        post = {"id": "1", "thumbnail_url": "https://cdn.example/cover.webp"}
+        client = MagicMock()
+
+        with tempfile.TemporaryDirectory() as tmp:
+            video_path = str(Path(tmp) / "20241205 title.mp4")
+            old_poster = Path(tmp) / "20241205 title-poster.png"
+            old_poster.write_bytes(b"wrong")
+
+            def write_poster(_session, _url, _headers, destination):
+                Path(destination).write_bytes(b"correct")
+                return True
+
+            with patch.object(myfans_dl, "download_image_bytes", side_effect=write_poster):
+                downloaded = myfans_dl.download_video_poster(post, {}, video_path, client)
+
+            self.assertTrue(downloaded)
+            self.assertFalse(old_poster.exists())
+            self.assertTrue((Path(tmp) / "20241205 title-poster.webp").is_file())
 
 
 if __name__ == "__main__":

@@ -96,6 +96,7 @@ def download_video_poster(
     video_stem = os.path.splitext(os.path.basename(video_path))[0]
     poster_path = os.path.join(os.path.dirname(video_path), f"{video_stem}-poster{extension}")
     if os.path.exists(poster_path) and os.path.getsize(poster_path) > 0:
+        _remove_stale_poster_files(video_path, poster_path)
         update_file_date(post, poster_path)
         emit(progress_queue, f"封面已存在：{os.path.basename(poster_path)}")
         return True
@@ -109,12 +110,28 @@ def download_video_poster(
         )
         if not downloaded:
             raise OSError("下载结果为空")
+        _remove_stale_poster_files(video_path, poster_path)
         update_file_date(post, poster_path)
         emit(progress_queue, f"封面下载完成：{os.path.basename(poster_path)}")
         return True
     except (OSError, requests.RequestException) as exc:
         emit(progress_queue, f"封面下载失败，但视频不受影响：{exc}", "warning")
         return False
+
+
+def _remove_stale_poster_files(video_path: str, current_poster_path: str) -> None:
+    """删除同一视频由旧封面规则生成的其他图片文件。"""
+
+    video_file = Path(video_path)
+    current = Path(current_poster_path)
+    supported_extensions = {".jpg", ".jpeg", ".png", ".webp", ".avif"}
+    for candidate in video_file.parent.glob(f"{video_file.stem}-poster.*"):
+        if candidate == current or candidate.suffix.lower() not in supported_extensions:
+            continue
+        try:
+            candidate.unlink()
+        except OSError:
+            logger.warning("无法删除旧封面文件：%s", candidate)
 
 
 def process_image_post(
