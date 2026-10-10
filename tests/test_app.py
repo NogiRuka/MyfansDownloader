@@ -21,7 +21,9 @@ class FlaskRouteTests(unittest.TestCase):
     def test_index_ok(self):
         resp = self.client.get("/")
         self.assertEqual(resp.status_code, 200)
-        self.assertIn("下载你可以访问的内容", resp.get_data(as_text=True))
+        html = resp.get_data(as_text=True)
+        self.assertIn("下载你可以访问的内容", html)
+        self.assertIn("myfans-logo.svg", html)
 
     def test_settings_page_is_html_not_json(self):
         resp = self.client.get("/settings")
