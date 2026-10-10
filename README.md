@@ -1,118 +1,216 @@
-# MyFans Downloader
+# MyFans 下载器
 
-Download videos and images from [myfans.jp](https://myfans.jp) that your account can already access.
+一个面向中文用户的 [MyFans](https://myfans.jp) 视频与图片下载工具。提供本地网页界面，支持按创作者批量下载、按作品 ID 下载、清晰度选择、自动归档和下载状态记录。
 
-| Content | Support |
-| --- | :---: |
-| Videos 2160p / 1080p / 720p / 480p / 360p | Yes |
-| Back-number videos | Yes |
-| Images | Yes |
-| Quality fallback if a requested resolution is missing | Yes |
+> 本项目只用于下载你自己的账号已经有权访问的内容。请遵守 MyFans 服务条款、创作者授权范围及所在地法律。
 
-## Requirements
+## 功能
 
-- Python 3.9 or newer
-- [FFmpeg](https://ffmpeg.org/) on your `PATH` (needed for videos)
-- A MyFans account token for paid or members-only posts (optional for free/public posts)
+- 下载 2160p、1080p、720p、480p 和 360p 视频；
+- 指定画质不存在时自动选择合适的可用画质；
+- 下载普通作品、可访问的 Back Number 和套餐作品；
+- 下载一个图片作品中的全部图片；
+- 按免费、非免费或全部作品筛选；
+- 按创作者自动整理视频和图片目录；
+- 检查已有视频，避免重复下载损坏文件；
+- 中文网页界面和实时下载日志；
+- 记住最近输入的创作者、作品 ID 和下载选项；
+- 支持自定义文件名和可选 JSON 元数据。
 
-On Windows you can run `SETUP.bat` once to install Python and dependencies, then `MyfansDownloader.bat` to start.
+## Windows 一键启动
 
-中文用户可以直接双击 `启动网页端.bat`。程序会启动本地网页服务，并在服务就绪后自动打开浏览器；关闭命令窗口即可停止服务。
+### 第一次使用
 
-## Set your token
+1. 双击 `SETUP.bat`，安装 Python 和项目依赖；
+2. 确保电脑已经安装 FFmpeg；
+3. 双击 `启动网页端.bat`；
+4. 程序会启动本地服务并自动打开浏览器。
 
-Paid and members-only posts need the `_mfans_token` cookie from myfans.jp after you sign in.
+以后只需双击：
 
-1. Open [myfans.jp](https://myfans.jp) and log in.
-2. In browser DevTools, copy `_mfans_token`.
-3. Put it in `header.txt` in the project folder (CLI) or in `config/header.txt` (Docker):
-
+```text
+启动网页端.bat
 ```
+
+默认访问地址：
+
+```text
+http://127.0.0.1:5000
+```
+
+关闭启动程序的命令窗口即可停止网页服务。如果服务已经在运行，再次双击启动文件只会打开浏览器，不会重复启动服务。
+
+## 设置登录令牌
+
+下载付费或会员内容需要 MyFans 登录后的 `_mfans_token`。免费公开内容可以在没有令牌的情况下尝试下载。
+
+1. 在浏览器中登录 [MyFans](https://myfans.jp)；
+2. 打开浏览器开发者工具；
+3. 在 Cookie 中找到 `_mfans_token`；
+4. 打开下载器网页的“设置”；
+5. 将 `_mfans_token` 的值粘贴到“MyFans 令牌”；
+6. 点击“保存设置”。
+
+设置页不会回显已经保存的令牌。令牌保存在本机的 `header.txt`，该文件已被 Git 忽略，不会随正常提交上传到 GitHub。
+
+也可以复制 `header.example.txt` 为 `header.txt`，然后手动填写：
+
+```text
 authorization: Token token=YOUR_TOKEN_HERE
-user-agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36
+user-agent: Mozilla/5.0
 ```
 
-You can paste either the raw cookie value or a full `Token token=...` line. Do not commit or share this file.
+请勿分享 `header.txt`，也不要把真实令牌粘贴到 Issue、日志或公开聊天中。
 
-![Find the token in cookies](https://github.com/FudgeRK/MyfansVideoDownload/assets/30218389/d1beaf05-bdd7-4ee9-8799-fa7590fce79a)
-![Authorization header format](https://github.com/FudgeRK/MyfansVideoDownload/assets/30218389/04357ec0-b076-4372-8dd1-31f2b9602901)
+## 网页端使用方法
 
-## Tutorial
+### 按创作者批量下载
 
-[![Tutorial video](https://i.vimeocdn.com/video/1906551049-edd0aa942beaa0f83af9e3c04e3aba98d51253b81bf837967309ec1fb7cac618-d?mw=900&q=85)](https://vimeo.com/990745787)
+1. 选择“视频”或“图片”；
+2. 选择“按创作者批量下载”；
+3. 输入创作者用户名，不需要输入 `@`；
+4. 选择内容范围；
+5. 下载视频时选择清晰度；
+6. 点击“开始下载”。
 
-## Python usage
+### 按作品 ID 下载
 
-From the project folder:
+1. 选择内容类型；
+2. 选择“按作品 ID 下载”；
+3. 输入作品 ID；
+4. 点击“开始下载”。
 
-```bash
-pip install -r requirements.txt
+网页会在当前浏览器中记住最近使用的创作者、作品 ID、内容类型、下载方式、筛选条件和清晰度。点击“清除输入记忆”可以删除这些浏览器本地记录。
+
+## 下载目录
+
+默认保存结构：
+
+```text
+downloads/
+└─ 创作者用户名/
+   ├─ videos/
+   │  └─ 视频文件.mp4
+   └─ images/
+      └─ 图片文件.jpg
+```
+
+程序会使用 `ffprobe` 检查已有视频。损坏的文件会被删除并重新下载；检查正常的文件会跳过。
+
+## 网页设置
+
+| 设置 | 默认值 | 说明 |
+| --- | --- | --- |
+| 文件名模板 | `{creator}_{date}_{id}` | 控制下载文件名称 |
+| 替换分隔符 | `_` | 替换文件名中的路径分隔符 |
+| 同时下载作品数 | `3` | 同时处理多少个作品 |
+| JSON 元数据 | 关闭 | 为每个媒体文件生成元数据 |
+| MyFans 令牌 | 空 | 用于访问账号已解锁的内容 |
+
+文件名模板支持以下变量：
+
+| 变量 | 内容 |
+| --- | --- |
+| `{creator}` | 创作者用户名 |
+| `{date}` | 作品发布日期 |
+| `{title}` | 作品标题或正文第一行 |
+| `{id}` | 作品 ID |
+
+例如：
+
+```ini
+pattern = {date}_{title}_{id}
+```
+
+## 配置文件
+
+基础配置位于 `config.ini`：
+
+```ini
+[Settings]
+output_dir = downloads
+
+[Filename]
+pattern = {creator}_{date}_{id}
+separator = _
+
+[Threads]
+threads = 3
+```
+
+网页设置会更新对应配置，同时保留其他配置项。登录令牌不会写入 `config.ini`。
+
+## 其他启动方式
+
+命令行菜单：
+
+```powershell
 python main.py
 ```
 
-`MyfansDownloader_unified.py` is the same menu with an extra CLI / web choice.
+直接启动网页服务：
 
-| Option | What it does |
-| --- | --- |
-| Download videos | All posts for a creator, a single post ID, or a list of IDs. Quality is selectable. |
-| Download images | All image posts for a creator. |
-| Web interface | Browser UI at http://127.0.0.1:5000 |
-
-Downloads go to `downloads/<creator>/videos` or `downloads/<creator>/images` by default. Filenames and the output folder are set in `config.ini`.
-
-## Docker usage
-
-### Docker Compose
-
-```bash
-mkdir -p config downloads
-# put header.txt in ./config
-# Linux: the compose file runs as UID 1000, so grant write access:
-#   sudo chown 1000:1000 config downloads
-docker compose up
+```powershell
+python web_launcher.py
 ```
 
-Keep port 5000 on localhost. Files are written to `./downloads`.
+安装依赖：
 
-### Docker run
-
-```bash
-docker run -it \
-  -e FILENAME_PATTERN="{creator}_{date}_{id}" \
-  -e FILENAME_SEPARATOR="_" \
-  -e THREAD_COUNT="3" \
-  -v "$(pwd)/config:/config" \
-  -v "$(pwd)/downloads:/downloads" \
-  -p 5000:5000 \
-  frequency2098/myfans-downloader:latest
+```powershell
+python -m pip install -r requirements.txt
 ```
 
-## Configuration
+项目仍保留 Docker 相关文件，但本 Fork 当前主要维护和使用 Windows 本地网页端。
 
-| Setting | Where | Default |
-| --- | --- | --- |
-| Output folder | `config.ini` `[Settings] output_dir` or `DOWNLOADS_DIR` | `downloads` |
-| Filename pattern | `config.ini` `[Filename] pattern` or `FILENAME_PATTERN` | `{creator}_{date}_{id}` |
-| Filename separator | `config.ini` `[Filename] separator` or `FILENAME_SEPARATOR` | `_` |
-| Post download threads | `config.ini` `[Threads] threads` or `THREAD_COUNT` | `3` |
-| HLS segment threads | `SEGMENT_DOWNLOAD_THREADS` | `8` |
-| JSON metadata | `WRITE_METADATA` (`1` / `0`) | `0` |
-| Auth token | `header.txt` or `AUTH_TOKEN` | empty |
+## 常见问题
 
-Filename placeholders: `{creator}`, `{date}`, `{id}`, `{title}`.
+### 网页没有自动打开
 
-The web **Settings** page updates the token, filename pattern, and thread count without wiping the rest of `config.ini`.
+手动访问：
 
-## Tests
+```text
+http://127.0.0.1:5000
+```
 
-```bash
+### 出现 401 或 403
+
+登录令牌可能已经过期。重新登录 MyFans，获取新的 `_mfans_token` 并在设置页保存。
+
+### 视频无法下载
+
+确认 FFmpeg 已加入系统 `PATH`：
+
+```powershell
+ffmpeg -version
+ffprobe -version
+```
+
+### 修改设置后没有生效
+
+环境变量的优先级高于 `config.ini`。如果设置了 `FILENAME_PATTERN`、`THREAD_COUNT` 等环境变量，它们会覆盖网页保存的配置。
+
+## 测试
+
+```powershell
 python -m unittest discover -s tests -v
 ```
 
-## Contributing
+测试覆盖网页路由、配置保存、下载状态、文件名、令牌解析、清晰度选择和 HLS 播放列表选择。真实 MyFans API、账号权限和长时间媒体下载仍需在实际环境中验证。
 
-Bug reports and pull requests are welcome: [open a PR](https://github.com/FudgeRK/MyfansDownloader/pulls).
+## 安全说明
 
-## Special thanks
+- 网页服务默认只监听本机；
+- 不要把端口 5000 直接暴露到公网；
+- 不要提交 `header.txt`；
+- 如果令牌意外上传到 GitHub，请立即更换登录会话；
+- 下载状态保存在本机，不会上传到额外服务。
 
-[Shenggang](https://github.com/Shenggang), [bluems](https://github.com/bluems), [Serph91P](https://github.com/Serph91P), [albertphil](https://github.com/albertphil), [0xSho](https://github.com/mydcxiao), [Foxtopus](https://github.com/Foxtopus)
+## 上游项目与致谢
+
+本仓库 Fork 自 [FudgeRK/MyfansDownloader](https://github.com/FudgeRK/MyfansDownloader)，并在其基础上继续维护中文网页端与 Windows 使用体验。
+
+感谢原项目及所有贡献者：[Shenggang](https://github.com/Shenggang)、[bluems](https://github.com/bluems)、[Serph91P](https://github.com/Serph91P)、[albertphil](https://github.com/albertphil)、[0xSho](https://github.com/mydcxiao)、[Foxtopus](https://github.com/Foxtopus)。
+
+## 许可证
+
+本项目使用 [GNU General Public License v3.0](LICENSE)。
