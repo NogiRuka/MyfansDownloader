@@ -291,6 +291,9 @@ def process_video_post(
     download_poster: bool = True,
 ) -> bool:
     try:
+        if download_state and download_state.is_completed(post_id):
+            emit(progress_queue, f"视频作品 {post_id} 已下载或已归档，跳过。")
+            return True
         if download_state:
             download_state.add_download(post_id, status="in_progress")
         data = client.get_post(post_id)
@@ -586,12 +589,17 @@ def start_download(
                 order=str(organization["season_order"]),
             )
             if organization["season_enabled"] and season_number not in (None, "", "all"):
-                try:
-                    selected_season = max(1, int(season_number))
-                except (TypeError, ValueError):
-                    selected_season = 1
-                plan = [item for item in plan if item["season_number"] == selected_season]
-                emit(progress_queue, f"本次只下载第 {selected_season} 卷，共 {len(plan)} 个作品。")
+                raw_seasons = season_number if isinstance(season_number, list) else [season_number]
+                selected_seasons = set()
+                for value in raw_seasons:
+                    try:
+                        selected_seasons.add(max(1, int(value)))
+                    except (TypeError, ValueError):
+                        continue
+                if selected_seasons:
+                    plan = [item for item in plan if item["season_number"] in selected_seasons]
+                    labels = "、".join(str(number) for number in sorted(selected_seasons))
+                    emit(progress_queue, f"本次下载第 {labels} 卷，共 {len(plan)} 个作品。")
             posts = [item["post"] for item in plan]
             post_folders = {
                 str(item["post"].get("id")): item["folder"]

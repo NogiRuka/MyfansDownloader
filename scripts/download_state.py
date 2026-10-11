@@ -78,13 +78,14 @@ class DownloadState:
             if post_id in self.state["downloads"]:
                 self.state["downloads"][post_id]["status"] = "completed"
                 self.state["downloads"][post_id]["last_updated"] = datetime.now().isoformat()
+                self.state["downloads"][post_id].pop("archived", None)
                 if file_path:
                     self.state["downloads"][post_id]["file_path"] = os.path.abspath(file_path)
             self.state["completed_files"].add(post_id)
             self.save_state()
 
     def mark_missing(self, post_id):
-        """清除已经不存在于硬盘上的视频完成记录。"""
+        """将作品重新标记为未下载，允许用户再次下载。"""
         with self._lock:
             post_id = str(post_id)
             changed = post_id in self.state["completed_files"]
@@ -94,9 +95,23 @@ class DownloadState:
                 entry["status"] = "pending"
                 entry["last_updated"] = datetime.now().isoformat()
                 entry.pop("file_path", None)
+                entry.pop("archived", None)
                 changed = True
             if changed:
                 self.save_state()
+
+    def mark_archived(self, post_id):
+        """将已经转移到其他存储空间的作品标记为已归档。"""
+        with self._lock:
+            post_id = str(post_id)
+            entry = self.state["downloads"].setdefault(post_id, {})
+            entry["status"] = "completed"
+            entry["archived"] = True
+            entry["last_updated"] = datetime.now().isoformat()
+            entry.pop("file_path", None)
+            self.state["completed_files"].add(post_id)
+            self.state["failed_files"].pop(post_id, None)
+            self.save_state()
 
     def mark_failed(self, post_id, error):
         with self._lock:

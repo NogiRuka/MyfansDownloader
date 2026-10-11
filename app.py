@@ -55,7 +55,7 @@ def start_download():
     download_type = data.get("download_type", "all")
     post_id = (data.get("post_id") or "").strip() or None
     resolution = data.get("resolution", "best")
-    season_number = data.get("season_number")
+    season_numbers = data.get("season_numbers", data.get("season_number"))
 
     if not post_id and not username:
         return jsonify({"error": "请输入创作者用户名或作品 ID。"}), 400
@@ -81,7 +81,7 @@ def start_download():
                 download_state,
                 post_id=post_id,
                 resolution=resolution,
-                season_number=season_number,
+                season_number=season_numbers,
             )
         except Exception as exc:
             error = f"下载任务发生错误：{exc}"
@@ -194,8 +194,7 @@ def creator_posts():
                 if file_exists:
                     status = "completed"
                 elif post_id in completed or status == "completed":
-                    download_state.mark_missing(post_id)
-                    status = "pending"
+                    status = "archived"
             elif post_id in completed:
                 status = "completed"
             title = ""
@@ -221,6 +220,7 @@ def creator_posts():
                 "username": username,
                 "total": len(items),
                 "completed": sum(1 for item in items if item["status"] == "completed"),
+                "archived": sum(1 for item in items if item["status"] == "archived"),
                 "season_enabled": bool(organization["season_enabled"]),
                 "items": items,
             }
@@ -233,6 +233,19 @@ def creator_posts():
         return jsonify({"error": message}), 400
     except (requests.RequestException, ValueError) as exc:
         return jsonify({"error": str(exc)}), 400
+
+
+@app.route("/api/download-state/<post_id>", methods=["POST"])
+def update_download_state(post_id):
+    data = request.get_json(silent=True) or {}
+    status = str(data.get("status") or "").strip().lower()
+    if status == "archived":
+        download_state.mark_archived(post_id)
+    elif status == "pending":
+        download_state.mark_missing(post_id)
+    else:
+        return jsonify({"error": "状态只能设置为 archived 或 pending。"}), 400
+    return jsonify({"status": "success"})
 
 
 @app.route("/settings", methods=["GET", "POST"])

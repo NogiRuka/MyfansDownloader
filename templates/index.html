@@ -59,7 +59,18 @@
     .status-pending { color: #667085; background: #eef0f4; }
     .status-in_progress { color: #8a5b00; background: #fff4cf; }
     .status-completed { color: #15745a; background: #e4f8f0; }
+    .status-archived { color: #175cd3; background: #eaf2ff; }
     .status-failed { color: #b42318; background: #feeceb; }
+    .season-picker { display: flex; align-items: center; justify-content: space-between; gap: 1rem; min-height: 3rem; padding: .65rem .8rem; border: 1px solid var(--line); border-radius: .85rem; background: rgba(255, 255, 255, .86); }
+    .season-groups { padding: .8rem; }
+    .season-group { margin-bottom: .7rem; overflow: hidden; border: 1px solid var(--line); border-radius: 1rem !important; background: #fff; }
+    .season-group:last-child { margin-bottom: 0; }
+    .season-group .accordion-button { gap: .8rem; padding: 1rem 1.1rem; background: #fff; box-shadow: none; }
+    .season-group .accordion-button:not(.collapsed) { color: var(--ink); background: var(--brand-soft); }
+    .season-select { position: relative; z-index: 2; flex: 0 0 auto; width: 1.1rem; height: 1.1rem; margin: 0; }
+    .season-heading { display: flex; flex: 1; align-items: center; justify-content: space-between; gap: 1rem; min-width: 0; }
+    .season-counts { color: var(--muted); font-size: .8rem; font-weight: 500; }
+    .work-action { white-space: nowrap; }
     @media (max-width: 767.98px) {
         .side-panel { border-top: 1px solid var(--line); border-left: 0; }
         .form-panel, .side-panel { padding: 1.2rem; }
@@ -137,12 +148,15 @@
                         </select>
                     </div>
                     <div class="col-12" id="seasonGroup">
-                        <label for="seasonNumber" class="form-label">本次下载分卷</label>
-                        <select id="seasonNumber" class="form-select">
-                            <option value="1">S01（前 20 个作品）</option>
-                            <option value="all">全部分卷</option>
-                        </select>
-                        <div class="field-note">先查看作品列表可显示准确的分卷名称和作品数量。</div>
+                        <label class="form-label">本次下载分卷</label>
+                        <div class="season-picker">
+                            <span class="small text-secondary" id="seasonSelectionSummary">请先查看作品列表，再勾选要下载的分卷。</span>
+                            <span class="d-flex gap-2 flex-shrink-0">
+                                <button type="button" class="btn btn-sm btn-light border" id="selectAllSeasonsBtn">全选</button>
+                                <button type="button" class="btn btn-sm btn-light border" id="clearSeasonsBtn">清空</button>
+                            </span>
+                        </div>
+                        <div class="field-note">可以同时勾选多个分卷，下载过或已归档的作品会自动跳过。</div>
                     </div>
 
                     <div class="col-12 mt-4">
@@ -184,15 +198,8 @@
         </div>
         <button type="button" class="btn btn-sm btn-light border" id="refreshPostsBtn">刷新列表</button>
     </div>
-    <div class="works-table-wrap">
-        <table class="table table-hover align-middle works-table">
-            <thead>
-                <tr><th>分卷</th><th>发布时间</th><th>作品标题</th><th>范围</th><th>状态</th></tr>
-            </thead>
-            <tbody id="worksBody">
-                <tr><td colspan="5" class="py-5 text-center text-secondary">尚未读取作品</td></tr>
-            </tbody>
-        </table>
+    <div class="season-groups accordion" id="worksGroups">
+        <div class="py-5 text-center text-secondary" id="worksEmpty">尚未读取作品</div>
     </div>
 </section>
 
@@ -215,6 +222,7 @@
     const STORAGE_KEY = 'myfansDownloader.preferences.v1';
     const MAX_HISTORY = 8;
     let eventSource = null;
+    let restoredSeasonSelection = [];
 
     const elements = {
         type: document.getElementById('type'),
@@ -222,8 +230,7 @@
         username: document.getElementById('username'),
         postId: document.getElementById('postId'),
         filter: document.getElementById('download_type'),
-        resolution: document.getElementById('resolution'),
-        season: document.getElementById('seasonNumber')
+        resolution: document.getElementById('resolution')
     };
 
     function readPreferences() {
@@ -263,9 +270,10 @@
             username: elements.username.value.trim(),
             postId: elements.postId.value.trim(),
             filter: elements.filter.value,
-            resolution: elements.resolution.value,
-            season: elements.season.value
+            resolution: elements.resolution.value
         };
+        const selectedSeasons = getSelectedSeasons();
+        if (document.querySelector('.season-select')) preferences.seasons = selectedSeasons;
         if (addHistory) {
             preferences.usernames = rememberValue(previous.usernames, preferences.username);
             preferences.postIds = rememberValue(previous.postIds, preferences.postId);
@@ -288,7 +296,9 @@
         });
         elements.username.value = preferences.username || '';
         elements.postId.value = preferences.postId || '';
-        if (preferences.season) elements.season.value = preferences.season;
+        restoredSeasonSelection = Array.isArray(preferences.seasons)
+            ? preferences.seasons.map(String)
+            : preferences.season && preferences.season !== 'all' ? [String(preferences.season)] : [];
         renderHistory('usernameHistory', preferences.usernames);
         renderHistory('postIdHistory', preferences.postIds);
     }
@@ -355,7 +365,37 @@
     document.getElementById('clearLogBtn').addEventListener('click', clearLog);
 
     function statusLabel(status) {
-        return ({ pending: '未下载', in_progress: '下载中', completed: '已下载', failed: '失败' })[status] || status;
+        return ({ pending: '未下载', in_progress: '下载中', completed: '本地已有', archived: '已归档', failed: '失败' })[status] || status;
+    }
+
+    function getSelectedSeasons() {
+        return [...document.querySelectorAll('.season-select:checked')].map(input => input.value);
+    }
+
+    function updateSeasonSelection() {
+        const selected = getSelectedSeasons();
+        restoredSeasonSelection = selected;
+        const summary = document.getElementById('seasonSelectionSummary');
+        summary.textContent = selected.length
+            ? `已选择 ${selected.length} 个分卷：${selected.map(number => `S${String(number).padStart(2, '0')}`).join('、')}`
+            : '尚未选择分卷。';
+        saveCurrentPreferences();
+    }
+
+    function setAllSeasons(checked) {
+        document.querySelectorAll('.season-select').forEach(input => { input.checked = checked; });
+        updateSeasonSelection();
+    }
+
+    async function updateWorkStatus(postId, status) {
+        const response = await fetch(`/api/download-state/${encodeURIComponent(postId)}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ status })
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.error || '更新状态失败');
+        await loadCreatorPosts();
     }
 
     async function loadCreatorPosts() {
@@ -378,52 +418,109 @@
             const data = await response.json().catch(() => ({}));
             if (!response.ok) throw new Error(data.error || '读取作品列表失败');
 
-            const counts = new Map();
-            data.items.forEach(item => counts.set(item.season_number, (counts.get(item.season_number) || 0) + 1));
-            const seasonSelect = elements.season;
-            seasonSelect.replaceChildren();
-            [...counts.entries()].forEach(([number, count]) => {
-                const first = data.items.find(item => item.season_number === number);
-                const option = document.createElement('option');
-                option.value = String(number);
-                option.textContent = `${first?.folder || `第 ${number} 卷`}（${count} 个）`;
-                seasonSelect.appendChild(option);
-            });
-            const allOption = document.createElement('option');
-            allOption.value = 'all';
-            allOption.textContent = `全部分卷（${data.total} 个）`;
-            seasonSelect.appendChild(allOption);
-            if (!data.items.length) seasonSelect.value = 'all';
-
-            const body = document.getElementById('worksBody');
-            body.replaceChildren();
+            const groups = new Map();
             data.items.forEach(item => {
-                const row = document.createElement('tr');
-                const folder = document.createElement('td');
-                folder.textContent = item.folder || '视频目录';
-                const date = document.createElement('td');
-                date.textContent = item.published_at ? item.published_at.slice(0, 10) : '未知';
-                const title = document.createElement('td');
-                title.className = 'work-title';
-                title.textContent = item.title;
-                title.title = item.title;
-                const scope = document.createElement('td');
-                scope.textContent = item.free ? '免费' : '非免费';
-                const status = document.createElement('td');
-                const badge = document.createElement('span');
-                badge.className = `status-badge status-${item.status}`;
-                badge.textContent = statusLabel(item.status);
-                status.appendChild(badge);
-                row.append(folder, date, title, scope, status);
-                body.appendChild(row);
+                if (!groups.has(item.season_number)) groups.set(item.season_number, []);
+                groups.get(item.season_number).push(item);
+            });
+            const container = document.getElementById('worksGroups');
+            container.replaceChildren();
+            [...groups.entries()].forEach(([number, items]) => {
+                const folder = items[0]?.folder || `第 ${number} 卷`;
+                const doneCount = items.filter(item => ['completed', 'archived'].includes(item.status)).length;
+                const group = document.createElement('div');
+                group.className = 'accordion-item season-group';
+
+                const header = document.createElement('h3');
+                header.className = 'accordion-header d-flex align-items-center';
+                const checkbox = document.createElement('input');
+                checkbox.type = 'checkbox';
+                checkbox.className = 'form-check-input season-select ms-3';
+                checkbox.value = String(number);
+                checkbox.setAttribute('aria-label', `选择 ${folder}`);
+                checkbox.checked = restoredSeasonSelection.length
+                    ? restoredSeasonSelection.includes(String(number))
+                    : number === [...groups.keys()][0];
+                checkbox.addEventListener('change', updateSeasonSelection);
+
+                const toggle = document.createElement('button');
+                toggle.className = 'accordion-button collapsed';
+                toggle.type = 'button';
+                toggle.dataset.bsToggle = 'collapse';
+                toggle.dataset.bsTarget = `#season-${number}`;
+                toggle.setAttribute('aria-expanded', 'false');
+                const heading = document.createElement('span');
+                heading.className = 'season-heading';
+                const name = document.createElement('strong');
+                name.textContent = folder;
+                const counts = document.createElement('span');
+                counts.className = 'season-counts';
+                counts.textContent = `${items.length} 个作品 · ${doneCount} 个已处理`;
+                heading.append(name, counts);
+                toggle.appendChild(heading);
+                header.append(checkbox, toggle);
+
+                const collapse = document.createElement('div');
+                collapse.id = `season-${number}`;
+                collapse.className = 'accordion-collapse collapse';
+                const body = document.createElement('div');
+                body.className = 'accordion-body p-0 works-table-wrap';
+                const table = document.createElement('table');
+                table.className = 'table table-hover align-middle works-table';
+                table.innerHTML = '<thead><tr><th>发布时间</th><th>作品标题</th><th>范围</th><th>状态</th><th>操作</th></tr></thead>';
+                const tbody = document.createElement('tbody');
+                items.forEach(item => {
+                    const row = document.createElement('tr');
+                    const date = document.createElement('td');
+                    date.textContent = item.published_at ? item.published_at.slice(0, 10) : '未知';
+                    const title = document.createElement('td');
+                    title.className = 'work-title';
+                    title.textContent = item.title;
+                    title.title = item.title;
+                    const scope = document.createElement('td');
+                    scope.textContent = item.free ? '免费' : '非免费';
+                    const status = document.createElement('td');
+                    const badge = document.createElement('span');
+                    badge.className = `status-badge status-${item.status}`;
+                    badge.textContent = statusLabel(item.status);
+                    status.appendChild(badge);
+                    const action = document.createElement('td');
+                    action.className = 'work-action';
+                    if (item.status === 'archived' || ['pending', 'failed'].includes(item.status)) {
+                        const actionButton = document.createElement('button');
+                        actionButton.type = 'button';
+                        actionButton.className = 'btn btn-sm btn-light border';
+                        const nextStatus = item.status === 'archived' ? 'pending' : 'archived';
+                        actionButton.textContent = item.status === 'archived' ? '允许重新下载' : '标记已下载';
+                        actionButton.addEventListener('click', async () => {
+                            actionButton.disabled = true;
+                            try {
+                                await updateWorkStatus(item.id, nextStatus);
+                            } catch (error) {
+                                appendLog(`更新作品状态失败：${error.message}`);
+                                actionButton.disabled = false;
+                            }
+                        });
+                        action.appendChild(actionButton);
+                    }
+                    row.append(date, title, scope, status, action);
+                    tbody.appendChild(row);
+                });
+                table.appendChild(tbody);
+                body.appendChild(table);
+                collapse.appendChild(body);
+                group.append(header, collapse);
+                container.appendChild(group);
             });
             if (!data.items.length) {
-                const row = document.createElement('tr');
-                row.innerHTML = '<td colspan="5" class="py-5 text-center text-secondary">没有符合当前条件的作品</td>';
-                body.appendChild(row);
+                const empty = document.createElement('div');
+                empty.className = 'py-5 text-center text-secondary';
+                empty.textContent = '没有符合当前条件的作品';
+                container.appendChild(empty);
             }
+            updateSeasonSelection();
             document.getElementById('worksSummary').textContent =
-                `共 ${data.total} 个作品，已下载 ${data.completed} 个，未下载 ${data.total - data.completed} 个。`;
+                `共 ${data.total} 个作品，本地已有 ${data.completed} 个，已归档 ${data.archived || 0} 个，未处理 ${data.total - data.completed - (data.archived || 0)} 个。`;
             saveCurrentPreferences(true);
         } catch (error) {
             document.getElementById('worksSummary').textContent = `读取失败：${error.message}`;
@@ -435,6 +532,8 @@
 
     document.getElementById('loadPostsBtn').addEventListener('click', loadCreatorPosts);
     document.getElementById('refreshPostsBtn').addEventListener('click', loadCreatorPosts);
+    document.getElementById('selectAllSeasonsBtn').addEventListener('click', () => setAllSeasons(true));
+    document.getElementById('clearSeasonsBtn').addEventListener('click', () => setAllSeasons(false));
 
     document.getElementById('downloadForm').addEventListener('submit', async event => {
         event.preventDefault();
@@ -449,11 +548,16 @@
             type: elements.type.value,
             download_type: elements.filter.value,
             resolution: elements.resolution.value,
-            season_number: elements.season.value
+            season_numbers: getSelectedSeasons()
         };
         if (!single && !data.username) {
             appendLog('请输入创作者用户名。');
             elements.username.focus();
+            return;
+        }
+        if (!single && data.type === 'videos' && !data.season_numbers.length) {
+            appendLog('请先查看作品列表，并至少勾选一个要下载的分卷。');
+            document.getElementById('worksCard').scrollIntoView({ behavior: 'smooth' });
             return;
         }
         if (single && !data.post_id) {

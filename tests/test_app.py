@@ -67,7 +67,7 @@ class FlaskRouteTests(unittest.TestCase):
         self.assertEqual([item["id"] for item in payload["items"]], ["1", "2"])
         self.assertEqual(payload["items"][0]["folder"], "S01")
 
-    def test_creator_posts_resets_completed_status_when_video_was_deleted(self):
+    def test_creator_posts_marks_deleted_completed_video_as_archived(self):
         posts = [
             {
                 "id": "deleted-video",
@@ -92,8 +92,23 @@ class FlaskRouteTests(unittest.TestCase):
                 resp = self.client.get("/api/creator-posts?username=creator&type=videos")
 
             self.assertEqual(resp.status_code, 200)
-            self.assertEqual(resp.get_json()["items"][0]["status"], "pending")
-            self.assertFalse(state.is_completed("deleted-video"))
+            self.assertEqual(resp.get_json()["items"][0]["status"], "archived")
+            self.assertTrue(state.is_completed("deleted-video"))
+
+    def test_download_state_can_be_marked_archived_and_pending(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            state = DownloadState(state_dir=tmp)
+            with patch("app.download_state", state):
+                archived = self.client.post(
+                    "/api/download-state/post-1", json={"status": "archived"}
+                )
+                pending = self.client.post(
+                    "/api/download-state/post-1", json={"status": "pending"}
+                )
+
+            self.assertEqual(archived.status_code, 200)
+            self.assertEqual(pending.status_code, 200)
+            self.assertFalse(state.is_completed("post-1"))
 
 
 if __name__ == "__main__":
