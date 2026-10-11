@@ -30,6 +30,7 @@ class FlaskRouteTests(unittest.TestCase):
         self.assertIn('data-bs-target="#settingsModal"', html)
         self.assertIn('id="settingsForm"', html)
         self.assertIn("settings.js", html)
+        self.assertIn('id="downloadSelectedBtn"', html)
 
     def test_settings_page_is_html_not_json(self):
         resp = self.client.get("/settings")
@@ -57,6 +58,15 @@ class FlaskRouteTests(unittest.TestCase):
     def test_download_requires_target(self):
         resp = self.client.post("/download", json={})
         self.assertEqual(resp.status_code, 400)
+
+    def test_download_rejects_an_empty_selected_work_list(self):
+        resp = self.client.post(
+            "/download",
+            json={"username": "creator", "post_ids": []},
+        )
+
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn("至少选择一个作品", resp.get_json()["error"])
 
     def test_creator_posts_are_sorted_and_grouped(self):
         posts = [

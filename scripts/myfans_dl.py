@@ -530,6 +530,7 @@ def start_download(
     post_id=None,
     resolution="best",
     season_number=None,
+    selected_post_ids=None,
 ):
     try:
         config = load_config()
@@ -596,6 +597,10 @@ def start_download(
         posts = _filter_posts(_list_posts(client, user, kind), download_type)
         emit(progress_queue, f"共有 {len(posts)} 个{kind_name}作品符合条件。")
         post_folders = {}
+        requested_post_ids = list(
+            dict.fromkeys(str(selected_id) for selected_id in (selected_post_ids or []) if selected_id)
+        )
+        requested_post_id_set = set(requested_post_ids)
         if kind == "video":
             plan = build_season_plan(
                 posts,
@@ -616,12 +621,22 @@ def start_download(
                     plan = [item for item in plan if item["season_number"] in selected_seasons]
                     labels = "、".join(str(number) for number in sorted(selected_seasons))
                     emit(progress_queue, f"本次下载第 {labels} 卷，共 {len(plan)} 个作品。")
+            if requested_post_id_set:
+                plan = [
+                    item
+                    for item in plan
+                    if str(item["post"].get("id")) in requested_post_id_set
+                ]
+                emit(progress_queue, f"本次仅下载选中的 {len(plan)} 个作品。")
             posts = [item["post"] for item in plan]
             post_folders = {
                 str(item["post"].get("id")): item["folder"]
                 for item in plan
                 if item["post"].get("id") and item["folder"]
             }
+        elif requested_post_id_set:
+            posts = [post for post in posts if str(post.get("id")) in requested_post_id_set]
+            emit(progress_queue, f"本次仅下载选中的 {len(posts)} 个作品。")
         post_ids = [post.get("id") for post in posts if post.get("id")]
         if not post_ids:
             emit(progress_queue, "没有符合当前条件的作品。")

@@ -135,6 +135,50 @@ class StartDownloadDoneTests(unittest.TestCase):
         self.assertEqual(args[1], [str(index) for index in range(10)] + [str(index) for index in range(20, 25)])
         self.assertEqual(set(kwargs["post_folders"].values()), {"S01", "S03"})
 
+    def test_start_download_only_sends_selected_posts_and_keeps_their_seasons(self):
+        from scripts import myfans_dl
+
+        posts = [
+            {"id": str(index), "published_at": f"2024-01-{index + 1:02d}T00:00:00Z"}
+            for index in range(25)
+        ]
+        queue = Queue()
+        client = MagicMock()
+        client.get_user_by_username.return_value = {"id": "creator-id"}
+        organization = {
+            "season_enabled": True,
+            "season_pattern": "S{number:02d}",
+            "season_size": 10,
+            "season_order": "oldest",
+        }
+        with patch.object(myfans_dl, "load_config", return_value=MagicMock()), patch.object(
+            myfans_dl, "output_directory", return_value="downloads"
+        ), patch.object(myfans_dl, "read_filename_config", return_value={"pattern": "{id}"}), patch.object(
+            myfans_dl, "validate_filename_config", return_value=True
+        ), patch.object(myfans_dl, "read_headers_from_file", return_value={"user-agent": "test"}), patch.object(
+            myfans_dl, "has_auth_token", return_value=True
+        ), patch.object(myfans_dl, "thread_count", return_value=1), patch.object(
+            myfans_dl, "download_poster_enabled", return_value=True
+        ), patch.object(myfans_dl, "organization_settings", return_value=organization), patch.object(
+            myfans_dl, "MyFansClient", return_value=client
+        ), patch.object(myfans_dl, "_list_posts", return_value=posts), patch.object(
+            myfans_dl, "download_videos_concurrently"
+        ) as download_mock:
+            myfans_dl.start_download(
+                "creator",
+                "videos",
+                "all",
+                queue,
+                selected_post_ids=["2", "12", "22"],
+            )
+
+        args, kwargs = download_mock.call_args
+        self.assertEqual(args[1], ["2", "12", "22"])
+        self.assertEqual(
+            kwargs["post_folders"],
+            {"2": "S01", "12": "S02", "22": "S03"},
+        )
+
 
 class LauncherTests(unittest.TestCase):
     def test_cli_entry_swallows_system_exit(self):

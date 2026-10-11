@@ -58,6 +58,19 @@ def start_download():
     post_id = (data.get("post_id") or "").strip() or None
     resolution = data.get("resolution", "best")
     season_numbers = data.get("season_numbers", data.get("season_number"))
+    selected_post_ids = data.get("post_ids")
+
+    if selected_post_ids is not None and not isinstance(selected_post_ids, list):
+        return jsonify({"error": "作品列表格式不正确。"}), 400
+    if isinstance(selected_post_ids, list):
+        selected_post_ids = list(
+            dict.fromkeys(str(selected_id).strip() for selected_id in selected_post_ids)
+        )
+        selected_post_ids = [selected_id for selected_id in selected_post_ids if selected_id]
+        if not selected_post_ids:
+            return jsonify({"error": "请至少选择一个作品。"}), 400
+        if len(selected_post_ids) > 1000:
+            return jsonify({"error": "单次最多选择 1000 个作品。"}), 400
 
     if not post_id and not username:
         return jsonify({"error": "请输入创作者用户名或作品 ID。"}), 400
@@ -84,6 +97,7 @@ def start_download():
                 post_id=post_id,
                 resolution=resolution,
                 season_number=season_numbers,
+                selected_post_ids=selected_post_ids,
             )
         except Exception as exc:
             error = f"下载任务发生错误：{exc}"

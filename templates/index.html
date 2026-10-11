@@ -218,6 +218,7 @@
             <span class="small fw-semibold">选择全部作品</span>
         </label>
         <span class="works-batch-summary" id="workSelectionSummary">已选择 0 个作品</span>
+        <button type="button" class="btn btn-sm btn-brand" id="downloadSelectedBtn" disabled>下载选中作品</button>
         <button type="button" class="btn btn-sm btn-light border" id="batchArchiveBtn" disabled>标记已下载</button>
         <button type="button" class="btn btn-sm btn-light border" id="batchPendingBtn" disabled>允许重新下载</button>
     </div>
@@ -245,6 +246,7 @@
     const STORAGE_KEY = 'myfansDownloader.preferences.v1';
     const MAX_HISTORY = 8;
     let eventSource = null;
+    let downloadRunning = false;
     let restoredSeasonSelection = [];
     let singleOpenMode = true;
     const expandedSeasonNumbers = new Set();
@@ -343,9 +345,11 @@
     }
 
     function setRunning(running) {
+        downloadRunning = running;
         document.getElementById('startBtn').disabled = running;
         document.getElementById('startSpinner').classList.toggle('d-none', !running);
         document.getElementById('serverStatus').textContent = running ? '正在执行下载任务' : '服务已就绪';
+        updateWorkSelection();
     }
 
     function clearLog() {
@@ -400,6 +404,10 @@
         return [...document.querySelectorAll('.season-select:checked')].map(input => input.value);
     }
 
+    function getSelectedWorkIds() {
+        return [...document.querySelectorAll('.work-select:checked')].map(input => input.value);
+    }
+
     function updateSeasonSelection() {
         const selected = getSelectedSeasons();
         restoredSeasonSelection = selected;
@@ -425,8 +433,9 @@
         selectAll.checked = checkboxes.length > 0 && selected.length === checkboxes.length;
         selectAll.indeterminate = selected.length > 0 && selected.length < checkboxes.length;
         document.getElementById('workSelectionSummary').textContent = `已选择 ${selected.length} 个作品`;
-        document.getElementById('batchArchiveBtn').disabled = selected.length === 0;
-        document.getElementById('batchPendingBtn').disabled = selected.length === 0;
+        document.getElementById('downloadSelectedBtn').disabled = downloadRunning || selected.length === 0;
+        document.getElementById('batchArchiveBtn').disabled = downloadRunning || selected.length === 0;
+        document.getElementById('batchPendingBtn').disabled = downloadRunning || selected.length === 0;
 
         document.querySelectorAll('.season-work-select').forEach(groupSelect => {
             const group = groupSelect.closest('.season-group');
@@ -490,7 +499,7 @@
     }
 
     async function updateSelectedWorkStatus(status) {
-        const postIds = [...document.querySelectorAll('.work-select:checked')].map(input => input.value);
+        const postIds = getSelectedWorkIds();
         if (!postIds.length) return;
         const buttons = [document.getElementById('batchArchiveBtn'), document.getElementById('batchPendingBtn')];
         buttons.forEach(button => { button.disabled = true; });
@@ -703,6 +712,50 @@
         };
     }
 
+    async function submitDownload(data) {
+        saveCurrentPreferences(true);
+        if (eventSource) eventSource.close();
+        setRunning(true);
+        appendLog('正在提交下载任务……');
+        try {
+            const response = await fetch('/download', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            });
+            if (!response.ok) {
+                const error = await response.json().catch(() => ({ error: response.statusText }));
+                appendLog(error.error || '启动下载失败。');
+                setRunning(false);
+                return;
+            }
+        } catch (error) {
+            appendLog('无法连接下载服务，请确认程序仍在运行。');
+            setRunning(false);
+            return;
+        }
+        connectProgress();
+    }
+
+    document.getElementById('downloadSelectedBtn').addEventListener('click', async () => {
+        const postIds = getSelectedWorkIds();
+        const username = elements.username.value.trim();
+        if (!postIds.length) return;
+        if (!username) {
+            appendLog('请输入创作者用户名。');
+            elements.username.focus();
+            return;
+        }
+        appendLog(`准备下载选中的 ${postIds.length} 个作品。`);
+        await submitDownload({
+            username,
+            type: elements.type.value,
+            download_type: elements.filter.value,
+            resolution: elements.resolution.value,
+            post_ids: postIds
+        });
+    });
+
     document.getElementById('downloadForm').addEventListener('submit', async event => {
         event.preventDefault();
         const single = elements.downloadType.value === 'single';
@@ -733,29 +786,7 @@
             elements.postId.focus();
             return;
         }
-        saveCurrentPreferences(true);
-        if (eventSource) eventSource.close();
-        setRunning(true);
-        appendLog('正在提交下载任务……');
-        try {
-            const response = await fetch('/download', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(data)
-            });
-            if (!response.ok) {
-                const error = await response.json().catch(() => ({ error: response.statusText }));
-                appendLog(error.error || '启动下载失败。');
-                setRunning(false);
-                return;
-            }
-        } catch (error) {
-            appendLog('无法连接下载服务，请确认程序仍在运行。');
-            setRunning(false);
-            return;
-        }
-
-        connectProgress();
+        await submitDownload(data);
     });
 
     async function loadStatus() {
