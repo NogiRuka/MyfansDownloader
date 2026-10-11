@@ -66,6 +66,7 @@ class FlaskRouteTests(unittest.TestCase):
         payload = resp.get_json()
         self.assertEqual([item["id"] for item in payload["items"]], ["1", "2"])
         self.assertEqual(payload["items"][0]["folder"], "S01")
+        self.assertEqual(payload["items"][0]["url"], "https://myfans.jp/posts/1")
 
     def test_creator_posts_marks_deleted_completed_video_as_archived(self):
         posts = [
@@ -109,6 +110,25 @@ class FlaskRouteTests(unittest.TestCase):
             self.assertEqual(archived.status_code, 200)
             self.assertEqual(pending.status_code, 200)
             self.assertFalse(state.is_completed("post-1"))
+
+    def test_download_states_can_be_updated_in_batch(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            state = DownloadState(state_dir=tmp)
+            with patch("app.download_state", state):
+                archived = self.client.post(
+                    "/api/download-state",
+                    json={"post_ids": ["post-1", "post-2"], "status": "archived"},
+                )
+                pending = self.client.post(
+                    "/api/download-state",
+                    json={"post_ids": ["post-1", "post-2"], "status": "pending"},
+                )
+
+            self.assertEqual(archived.status_code, 200)
+            self.assertEqual(archived.get_json()["updated"], 2)
+            self.assertEqual(pending.status_code, 200)
+            self.assertFalse(state.is_completed("post-1"))
+            self.assertFalse(state.is_completed("post-2"))
 
 
 if __name__ == "__main__":

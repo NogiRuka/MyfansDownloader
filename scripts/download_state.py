@@ -86,32 +86,38 @@ class DownloadState:
 
     def mark_missing(self, post_id):
         """将作品重新标记为未下载，允许用户再次下载。"""
-        with self._lock:
-            post_id = str(post_id)
-            changed = post_id in self.state["completed_files"]
-            self.state["completed_files"].discard(post_id)
-            entry = self.state["downloads"].get(post_id)
-            if entry and entry.get("status") == "completed":
-                entry["status"] = "pending"
-                entry["last_updated"] = datetime.now().isoformat()
-                entry.pop("file_path", None)
-                entry.pop("archived", None)
-                changed = True
-            if changed:
-                self.save_state()
+        self.set_status_many([post_id], "pending")
 
     def mark_archived(self, post_id):
         """将已经转移到其他存储空间的作品标记为已归档。"""
+        self.set_status_many([post_id], "archived")
+
+    def set_status_many(self, post_ids, status):
+        """一次更新多个作品的手动状态，避免批量操作反复写入状态文件。"""
+        normalized_ids = list(dict.fromkeys(str(post_id).strip() for post_id in post_ids))
+        normalized_ids = [post_id for post_id in normalized_ids if post_id]
+        if status not in {"archived", "pending"}:
+            raise ValueError("状态只能设置为 archived 或 pending。")
+
         with self._lock:
-            post_id = str(post_id)
-            entry = self.state["downloads"].setdefault(post_id, {})
-            entry["status"] = "completed"
-            entry["archived"] = True
-            entry["last_updated"] = datetime.now().isoformat()
-            entry.pop("file_path", None)
-            self.state["completed_files"].add(post_id)
-            self.state["failed_files"].pop(post_id, None)
-            self.save_state()
+            now = datetime.now().isoformat()
+            for post_id in normalized_ids:
+                entry = self.state["downloads"].setdefault(post_id, {})
+                entry["last_updated"] = now
+                entry.pop("file_path", None)
+                if status == "archived":
+                    entry["status"] = "completed"
+                    entry["archived"] = True
+                    self.state["completed_files"].add(post_id)
+                    self.state["failed_files"].pop(post_id, None)
+                else:
+                    entry["status"] = "pending"
+                    entry.pop("archived", None)
+                    entry.pop("error", None)
+                    self.state["completed_files"].discard(post_id)
+                    self.state["failed_files"].pop(post_id, None)
+            if normalized_ids:
+                self.save_state()
 
     def mark_failed(self, post_id, error):
         with self._lock:

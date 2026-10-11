@@ -50,11 +50,17 @@
     }
     .works-card { margin-top: 1.3rem; overflow: hidden; }
     .works-head { padding: 1.2rem 1.35rem; border-bottom: 1px solid var(--line); }
+    .works-head-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: .5rem; }
     .works-summary { color: var(--muted); font-size: .85rem; }
+    .works-batch-bar { display: flex; flex-wrap: wrap; align-items: center; gap: .65rem; padding: .75rem 1.35rem; border-bottom: 1px solid var(--line); background: #fbfbfd; }
+    .works-batch-summary { margin-right: auto; color: var(--muted); font-size: .82rem; }
     .works-table-wrap { max-height: 520px; overflow: auto; }
     .works-table { margin: 0; font-size: .86rem; }
     .works-table th { position: sticky; top: 0; z-index: 1; white-space: nowrap; background: #f8f9fc; }
+    .work-select-cell { width: 2.5rem; text-align: center; }
     .work-title { min-width: 260px; max-width: 460px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .work-title-link { color: var(--ink); text-decoration: none; }
+    .work-title-link:hover { color: var(--brand-deep); text-decoration: underline; }
     .status-badge { display: inline-block; padding: .25rem .55rem; border-radius: 999px; font-size: .75rem; font-weight: 700; white-space: nowrap; }
     .status-pending { color: #667085; background: #eef0f4; }
     .status-in_progress { color: #8a5b00; background: #fff4cf; }
@@ -65,12 +71,16 @@
     .season-groups { padding: .8rem; }
     .season-group { margin-bottom: .7rem; overflow: hidden; border: 1px solid var(--line); border-radius: 1rem !important; background: #fff; }
     .season-group:last-child { margin-bottom: 0; }
-    .season-group .accordion-button { gap: .8rem; padding: 1rem 1.1rem; background: #fff; box-shadow: none; }
+    .season-group .accordion-header { transition: background-color .18s ease; }
+    .season-group .accordion-button { gap: .8rem; padding: 1rem 1.1rem; background: transparent; box-shadow: none; }
     .season-group .accordion-button:not(.collapsed) { color: var(--ink); background: var(--brand-soft); }
+    .season-group.season-selected { border-color: rgba(255, 58, 119, .32); }
+    .season-group.season-selected > .accordion-header,
+    .season-group.season-selected > .accordion-header .accordion-button { background: var(--brand-soft); }
     .season-select { position: relative; z-index: 2; flex: 0 0 auto; width: 1.1rem; height: 1.1rem; margin: 0; }
     .season-heading { display: flex; flex: 1; align-items: center; justify-content: space-between; gap: 1rem; min-width: 0; }
     .season-counts { color: var(--muted); font-size: .8rem; font-weight: 500; }
-    .work-action { white-space: nowrap; }
+    .mode-button[aria-pressed="true"] { color: var(--brand-deep); border-color: rgba(255, 58, 119, .34) !important; background: var(--brand-soft); }
     @media (max-width: 767.98px) {
         .side-panel { border-top: 1px solid var(--line); border-left: 0; }
         .form-panel, .side-panel { padding: 1.2rem; }
@@ -196,7 +206,20 @@
             <h2 class="h6 fw-bold mb-1">创作者作品列表</h2>
             <p class="works-summary mb-0" id="worksSummary">输入创作者用户名后，点击“查看作品列表”。</p>
         </div>
-        <button type="button" class="btn btn-sm btn-light border" id="refreshPostsBtn">刷新列表</button>
+        <div class="works-head-actions">
+            <button type="button" class="btn btn-sm btn-light border" id="toggleAllSeasonsBtn">全部展开</button>
+            <button type="button" class="btn btn-sm btn-light border mode-button" id="singleOpenModeBtn" aria-pressed="true">单卷展开：开</button>
+            <button type="button" class="btn btn-sm btn-light border" id="refreshPostsBtn">刷新列表</button>
+        </div>
+    </div>
+    <div class="works-batch-bar" id="worksBatchBar">
+        <label class="d-flex align-items-center gap-2 mb-0">
+            <input type="checkbox" class="form-check-input mt-0" id="selectAllWorks">
+            <span class="small fw-semibold">选择全部作品</span>
+        </label>
+        <span class="works-batch-summary" id="workSelectionSummary">已选择 0 个作品</span>
+        <button type="button" class="btn btn-sm btn-light border" id="batchArchiveBtn" disabled>标记已下载</button>
+        <button type="button" class="btn btn-sm btn-light border" id="batchPendingBtn" disabled>允许重新下载</button>
     </div>
     <div class="season-groups accordion" id="worksGroups">
         <div class="py-5 text-center text-secondary" id="worksEmpty">尚未读取作品</div>
@@ -223,6 +246,8 @@
     const MAX_HISTORY = 8;
     let eventSource = null;
     let restoredSeasonSelection = [];
+    let singleOpenMode = true;
+    const expandedSeasonNumbers = new Set();
 
     const elements = {
         type: document.getElementById('type'),
@@ -270,7 +295,8 @@
             username: elements.username.value.trim(),
             postId: elements.postId.value.trim(),
             filter: elements.filter.value,
-            resolution: elements.resolution.value
+            resolution: elements.resolution.value,
+            singleOpenMode
         };
         const selectedSeasons = getSelectedSeasons();
         if (document.querySelector('.season-select')) preferences.seasons = selectedSeasons;
@@ -299,6 +325,8 @@
         restoredSeasonSelection = Array.isArray(preferences.seasons)
             ? preferences.seasons.map(String)
             : preferences.season && preferences.season !== 'all' ? [String(preferences.season)] : [];
+        singleOpenMode = preferences.singleOpenMode !== false;
+        updateSingleOpenButton();
         renderHistory('usernameHistory', preferences.usernames);
         renderHistory('postIdHistory', preferences.postIds);
     }
@@ -375,6 +403,9 @@
     function updateSeasonSelection() {
         const selected = getSelectedSeasons();
         restoredSeasonSelection = selected;
+        document.querySelectorAll('.season-group').forEach(group => {
+            group.classList.toggle('season-selected', Boolean(group.querySelector('.season-select:checked')));
+        });
         const summary = document.getElementById('seasonSelectionSummary');
         summary.textContent = selected.length
             ? `已选择 ${selected.length} 个分卷：${selected.map(number => `S${String(number).padStart(2, '0')}`).join('、')}`
@@ -387,14 +418,90 @@
         updateSeasonSelection();
     }
 
-    async function updateWorkStatus(postId, status) {
-        const response = await fetch(`/api/download-state/${encodeURIComponent(postId)}`, {
+    function updateWorkSelection() {
+        const checkboxes = [...document.querySelectorAll('.work-select')];
+        const selected = checkboxes.filter(input => input.checked);
+        const selectAll = document.getElementById('selectAllWorks');
+        selectAll.checked = checkboxes.length > 0 && selected.length === checkboxes.length;
+        selectAll.indeterminate = selected.length > 0 && selected.length < checkboxes.length;
+        document.getElementById('workSelectionSummary').textContent = `已选择 ${selected.length} 个作品`;
+        document.getElementById('batchArchiveBtn').disabled = selected.length === 0;
+        document.getElementById('batchPendingBtn').disabled = selected.length === 0;
+
+        document.querySelectorAll('.season-work-select').forEach(groupSelect => {
+            const group = groupSelect.closest('.season-group');
+            const children = [...group.querySelectorAll('.work-select')];
+            const checked = children.filter(input => input.checked).length;
+            groupSelect.checked = children.length > 0 && checked === children.length;
+            groupSelect.indeterminate = checked > 0 && checked < children.length;
+        });
+    }
+
+    function setAllWorks(checked) {
+        document.querySelectorAll('.work-select').forEach(input => { input.checked = checked; });
+        updateWorkSelection();
+    }
+
+    function updateSingleOpenButton() {
+        const button = document.getElementById('singleOpenModeBtn');
+        if (!button) return;
+        button.setAttribute('aria-pressed', String(singleOpenMode));
+        button.textContent = `单卷展开：${singleOpenMode ? '开' : '关'}`;
+        document.querySelectorAll('#worksGroups .accordion-collapse').forEach(collapse => {
+            if (singleOpenMode) collapse.dataset.bsParent = '#worksGroups';
+            else collapse.removeAttribute('data-bs-parent');
+        });
+    }
+
+    function syncExpandAllButton() {
+        const collapses = [...document.querySelectorAll('#worksGroups .accordion-collapse')];
+        const allExpanded = collapses.length > 0 && collapses.every(item => item.classList.contains('show'));
+        document.getElementById('toggleAllSeasonsBtn').textContent = allExpanded ? '全部收起' : '全部展开';
+    }
+
+    function toggleAllSeasons() {
+        const collapses = [...document.querySelectorAll('#worksGroups .accordion-collapse')];
+        const expand = collapses.some(item => !item.classList.contains('show'));
+        collapses.forEach(item => {
+            item.classList.toggle('show', expand);
+            const toggle = document.querySelector(`[data-bs-target="#${item.id}"]`);
+            toggle?.classList.toggle('collapsed', !expand);
+            toggle?.setAttribute('aria-expanded', String(expand));
+            const seasonNumber = item.closest('.season-group')?.dataset.seasonNumber;
+            if (seasonNumber) {
+                if (expand) expandedSeasonNumbers.add(seasonNumber);
+                else expandedSeasonNumbers.delete(seasonNumber);
+            }
+        });
+        syncExpandAllButton();
+    }
+
+    function toggleSingleOpenMode() {
+        singleOpenMode = !singleOpenMode;
+        document.querySelectorAll('#worksGroups .accordion-collapse').forEach(collapse => {
+            bootstrap.Collapse.getInstance(collapse)?.dispose();
+        });
+        updateSingleOpenButton();
+        if (singleOpenMode) {
+            const expanded = [...document.querySelectorAll('#worksGroups .accordion-collapse.show')];
+            expanded.slice(1).forEach(item => bootstrap.Collapse.getOrCreateInstance(item, { toggle: false }).hide());
+        }
+        saveCurrentPreferences();
+    }
+
+    async function updateSelectedWorkStatus(status) {
+        const postIds = [...document.querySelectorAll('.work-select:checked')].map(input => input.value);
+        if (!postIds.length) return;
+        const buttons = [document.getElementById('batchArchiveBtn'), document.getElementById('batchPendingBtn')];
+        buttons.forEach(button => { button.disabled = true; });
+        const response = await fetch('/api/download-state', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ status })
+            body: JSON.stringify({ post_ids: postIds, status })
         });
         const data = await response.json().catch(() => ({}));
         if (!response.ok) throw new Error(data.error || '更新状态失败');
+        appendLog(`已批量更新 ${data.updated || postIds.length} 个作品的状态。`);
         await loadCreatorPosts();
     }
 
@@ -430,6 +537,7 @@
                 const doneCount = items.filter(item => ['completed', 'archived'].includes(item.status)).length;
                 const group = document.createElement('div');
                 group.className = 'accordion-item season-group';
+                group.dataset.seasonNumber = String(number);
 
                 const header = document.createElement('h3');
                 header.className = 'accordion-header d-flex align-items-center';
@@ -463,20 +571,53 @@
                 const collapse = document.createElement('div');
                 collapse.id = `season-${number}`;
                 collapse.className = 'accordion-collapse collapse';
+                if (singleOpenMode) collapse.dataset.bsParent = '#worksGroups';
+                if (expandedSeasonNumbers.has(String(number))) {
+                    collapse.classList.add('show');
+                    toggle.classList.remove('collapsed');
+                    toggle.setAttribute('aria-expanded', 'true');
+                }
+                collapse.addEventListener('shown.bs.collapse', () => {
+                    expandedSeasonNumbers.add(String(number));
+                    syncExpandAllButton();
+                });
+                collapse.addEventListener('hidden.bs.collapse', () => {
+                    expandedSeasonNumbers.delete(String(number));
+                    syncExpandAllButton();
+                });
                 const body = document.createElement('div');
                 body.className = 'accordion-body p-0 works-table-wrap';
                 const table = document.createElement('table');
                 table.className = 'table table-hover align-middle works-table';
-                table.innerHTML = '<thead><tr><th>发布时间</th><th>作品标题</th><th>范围</th><th>状态</th><th>操作</th></tr></thead>';
+                table.innerHTML = '<thead><tr><th class="work-select-cell"><input type="checkbox" class="form-check-input mt-0 season-work-select" aria-label="选择本卷全部作品"></th><th>发布时间</th><th>作品标题</th><th>范围</th><th>状态</th></tr></thead>';
+                table.querySelector('.season-work-select').addEventListener('change', event => {
+                    group.querySelectorAll('.work-select').forEach(input => { input.checked = event.target.checked; });
+                    updateWorkSelection();
+                });
                 const tbody = document.createElement('tbody');
                 items.forEach(item => {
                     const row = document.createElement('tr');
+                    const selectCell = document.createElement('td');
+                    selectCell.className = 'work-select-cell';
+                    const workSelect = document.createElement('input');
+                    workSelect.type = 'checkbox';
+                    workSelect.className = 'form-check-input mt-0 work-select';
+                    workSelect.value = item.id;
+                    workSelect.setAttribute('aria-label', `选择作品：${item.title}`);
+                    workSelect.addEventListener('change', updateWorkSelection);
+                    selectCell.appendChild(workSelect);
                     const date = document.createElement('td');
                     date.textContent = item.published_at ? item.published_at.slice(0, 10) : '未知';
                     const title = document.createElement('td');
                     title.className = 'work-title';
-                    title.textContent = item.title;
                     title.title = item.title;
+                    const titleLink = document.createElement('a');
+                    titleLink.className = 'work-title-link';
+                    titleLink.href = item.url;
+                    titleLink.target = '_blank';
+                    titleLink.rel = 'noopener noreferrer';
+                    titleLink.textContent = item.title;
+                    title.appendChild(titleLink);
                     const scope = document.createElement('td');
                     scope.textContent = item.free ? '免费' : '非免费';
                     const status = document.createElement('td');
@@ -484,26 +625,7 @@
                     badge.className = `status-badge status-${item.status}`;
                     badge.textContent = statusLabel(item.status);
                     status.appendChild(badge);
-                    const action = document.createElement('td');
-                    action.className = 'work-action';
-                    if (item.status === 'archived' || ['pending', 'failed'].includes(item.status)) {
-                        const actionButton = document.createElement('button');
-                        actionButton.type = 'button';
-                        actionButton.className = 'btn btn-sm btn-light border';
-                        const nextStatus = item.status === 'archived' ? 'pending' : 'archived';
-                        actionButton.textContent = item.status === 'archived' ? '允许重新下载' : '标记已下载';
-                        actionButton.addEventListener('click', async () => {
-                            actionButton.disabled = true;
-                            try {
-                                await updateWorkStatus(item.id, nextStatus);
-                            } catch (error) {
-                                appendLog(`更新作品状态失败：${error.message}`);
-                                actionButton.disabled = false;
-                            }
-                        });
-                        action.appendChild(actionButton);
-                    }
-                    row.append(date, title, scope, status, action);
+                    row.append(selectCell, date, title, scope, status);
                     tbody.appendChild(row);
                 });
                 table.appendChild(tbody);
@@ -519,6 +641,9 @@
                 container.appendChild(empty);
             }
             updateSeasonSelection();
+            updateWorkSelection();
+            updateSingleOpenButton();
+            syncExpandAllButton();
             document.getElementById('worksSummary').textContent =
                 `共 ${data.total} 个作品，本地已有 ${data.completed} 个，已归档 ${data.archived || 0} 个，未处理 ${data.total - data.completed - (data.archived || 0)} 个。`;
             saveCurrentPreferences(true);
@@ -534,6 +659,25 @@
     document.getElementById('refreshPostsBtn').addEventListener('click', loadCreatorPosts);
     document.getElementById('selectAllSeasonsBtn').addEventListener('click', () => setAllSeasons(true));
     document.getElementById('clearSeasonsBtn').addEventListener('click', () => setAllSeasons(false));
+    document.getElementById('selectAllWorks').addEventListener('change', event => setAllWorks(event.target.checked));
+    document.getElementById('toggleAllSeasonsBtn').addEventListener('click', toggleAllSeasons);
+    document.getElementById('singleOpenModeBtn').addEventListener('click', toggleSingleOpenMode);
+    document.getElementById('batchArchiveBtn').addEventListener('click', async () => {
+        try {
+            await updateSelectedWorkStatus('archived');
+        } catch (error) {
+            appendLog(`批量更新作品状态失败：${error.message}`);
+            updateWorkSelection();
+        }
+    });
+    document.getElementById('batchPendingBtn').addEventListener('click', async () => {
+        try {
+            await updateSelectedWorkStatus('pending');
+        } catch (error) {
+            appendLog(`批量更新作品状态失败：${error.message}`);
+            updateWorkSelection();
+        }
+    });
 
     document.getElementById('downloadForm').addEventListener('submit', async event => {
         event.preventDefault();

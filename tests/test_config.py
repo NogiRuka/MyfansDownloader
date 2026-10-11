@@ -56,6 +56,22 @@ class DownloadStateTests(unittest.TestCase):
             self.assertEqual(snapshot["downloads"]["abc"]["status"], "pending")
             self.assertNotIn("file_path", snapshot["downloads"]["abc"])
 
+    def test_batch_status_update_clears_failed_state(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            state = DownloadState(state_dir=tmp)
+            state.mark_failed("abc", "下载失败")
+
+            state.set_status_many(["abc", "def", "abc"], "archived")
+            archived = state.get_serializable_state()
+            self.assertEqual(archived["downloads"]["abc"]["status"], "completed")
+            self.assertNotIn("abc", archived["failed_files"])
+            self.assertIn("def", archived["completed_files"])
+
+            state.set_status_many(["abc", "def"], "pending")
+            pending = state.get_serializable_state()
+            self.assertEqual(pending["downloads"]["abc"]["status"], "pending")
+            self.assertNotIn("abc", pending["completed_files"])
+
 
 if __name__ == "__main__":
     unittest.main()

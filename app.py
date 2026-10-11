@@ -207,6 +207,7 @@ def creator_posts():
             items.append(
                 {
                     "id": post_id,
+                    "url": f"https://myfans.jp/posts/{post_id}",
                     "title": title or post_id,
                     "published_at": date.isoformat() if date else "",
                     "free": bool(post.get("free")),
@@ -246,6 +247,25 @@ def update_download_state(post_id):
     else:
         return jsonify({"error": "状态只能设置为 archived 或 pending。"}), 400
     return jsonify({"status": "success"})
+
+
+@app.route("/api/download-state", methods=["POST"])
+def update_download_states():
+    data = request.get_json(silent=True) or {}
+    status = str(data.get("status") or "").strip().lower()
+    post_ids = data.get("post_ids")
+    if not isinstance(post_ids, list) or not post_ids:
+        return jsonify({"error": "请至少选择一个作品。"}), 400
+    normalized_ids = list(dict.fromkeys(str(post_id).strip() for post_id in post_ids))
+    normalized_ids = [post_id for post_id in normalized_ids if post_id]
+    if not normalized_ids:
+        return jsonify({"error": "请至少选择一个有效作品。"}), 400
+    if len(normalized_ids) > 1000:
+        return jsonify({"error": "单次最多处理 1000 个作品。"}), 400
+    if status not in {"archived", "pending"}:
+        return jsonify({"error": "状态只能设置为 archived 或 pending。"}), 400
+    download_state.set_status_many(normalized_ids, status)
+    return jsonify({"status": "success", "updated": len(normalized_ids)})
 
 
 @app.route("/settings", methods=["GET", "POST"])
