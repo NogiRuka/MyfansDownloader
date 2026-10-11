@@ -25,9 +25,10 @@ FFMPEG_REMUX_TIMEOUT = 30 * 60
 
 
 def _notify(progress: ProgressCb, message: str) -> None:
-    logger.info(message)
     if progress:
         progress(message)
+    else:
+        logger.info(message)
 
 
 def _ffmpeg_headers(headers: Dict[str, str]) -> str:

@@ -56,9 +56,10 @@ def setup_logging() -> logging.Logger:
     if log.handlers:
         return log
     log.setLevel(logging.INFO)
-    formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
+    console_formatter = logging.Formatter("%(asctime)s  %(message)s", datefmt="%H:%M:%S")
+    file_formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
     console = logging.StreamHandler()
-    console.setFormatter(formatter)
+    console.setFormatter(console_formatter)
     log.addHandler(console)
     try:
         from scripts.paths import ensure_dir, log_file_path
@@ -68,7 +69,7 @@ def setup_logging() -> logging.Logger:
         from logging.handlers import RotatingFileHandler
 
         file_handler = RotatingFileHandler(path, maxBytes=10 * 1024 * 1024, backupCount=5, encoding="utf-8")
-        file_handler.setFormatter(formatter)
+        file_handler.setFormatter(file_formatter)
         log.addHandler(file_handler)
     except Exception as exc:
         log.warning("File logging disabled: %s", exc)

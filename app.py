@@ -29,6 +29,7 @@ formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(messag
 file_handler.setFormatter(formatter)
 console_handler.setFormatter(formatter)
 logging.basicConfig(level=logging.INFO, handlers=[file_handler, console_handler])
+logging.getLogger("werkzeug").setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)

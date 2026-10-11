@@ -26,7 +26,7 @@ from scripts.api import (
     videos_from_payload,
 )
 from scripts.filename_utils import generate_filename, generate_metadata, generated_filenames
-from scripts.hls import _ffmpeg_progress_message, ffmpeg_download, pick_master_variant
+from scripts.hls import _ffmpeg_progress_message, _notify, ffmpeg_download, pick_master_variant
 from scripts.paths import normalize_output_dir
 from scripts.utils import (
     clean_filename,
@@ -258,6 +258,15 @@ class MasterPlaylistTests(unittest.TestCase):
 
 
 class FfmpegProgressTests(unittest.TestCase):
+    def test_notify_does_not_log_a_second_time_when_callback_is_present(self):
+        messages = []
+
+        with patch("scripts.hls.logger.info") as logger_info:
+            _notify(messages.append, "下载进度")
+
+        self.assertEqual(messages, ["下载进度"])
+        logger_info.assert_not_called()
+
     def test_progress_message_contains_percent_time_and_speed(self):
         message, percent = _ffmpeg_progress_message("post-1", 30, 120, "2.0x")
 

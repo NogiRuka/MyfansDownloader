@@ -57,6 +57,15 @@ from scripts.utils import (
 logger = setup_logging()
 
 
+def _progress_label(filename: str, max_length: int = 48) -> str:
+    """生成适合在命令行进度中显示的简短作品名称。"""
+
+    stem = os.path.splitext(filename)[0]
+    if len(stem) <= max_length:
+        return stem
+    return f"{stem[: max_length - 1]}…"
+
+
 def _extension_from_url(url: str, default: str = ".jpg") -> str:
     path = urlparse(url).path
     ext = os.path.splitext(path)[1]
@@ -362,7 +371,7 @@ def process_video_post(
             chosen["url"],
             full_path,
             media_headers(client.headers),
-            post_id,
+            _progress_label(filename),
             requested_height=height_for_resolution(selected_resolution),
             progress=on_progress,
             segment_threads=segment_thread_count(),
@@ -430,7 +439,12 @@ def download_videos_concurrently(
     total = len(post_ids)
     emit(progress_queue, f"准备下载 {total} 个视频作品。")
     workers = max(1, int(max_workers or 1))
-    progress_bar = tqdm(total=total, desc="下载视频", unit="个")
+    progress_bar = tqdm(
+        total=total,
+        desc="下载视频",
+        unit="个",
+        disable=progress_queue is not None,
+    )
     if workers == 1:
         for post_id in post_ids:
             process_video_post(
@@ -488,7 +502,12 @@ def download_images_concurrently(
     client = MyFansClient(headers=headers, session=session)
     total = len(post_ids)
     emit(progress_queue, f"准备下载 {total} 个图片作品。")
-    progress_bar = tqdm(total=total, desc="下载图片", unit="个")
+    progress_bar = tqdm(
+        total=total,
+        desc="下载图片",
+        unit="个",
+        disable=progress_queue is not None,
+    )
     workers = max(1, int(max_workers or 1))
     if workers == 1:
         for post_id in post_ids:
