@@ -27,6 +27,9 @@ class FlaskRouteTests(unittest.TestCase):
         html = resp.get_data(as_text=True)
         self.assertIn("下载你可以访问的内容", html)
         self.assertIn("myfans-logo.svg", html)
+        self.assertIn('data-bs-target="#settingsModal"', html)
+        self.assertIn('id="settingsForm"', html)
+        self.assertIn("settings.js", html)
 
     def test_settings_page_is_html_not_json(self):
         resp = self.client.get("/settings")

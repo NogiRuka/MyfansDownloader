@@ -1,0 +1,95 @@
+<form id="settingsForm" class="glass-card settings-card">
+    <section>
+        <div class="section-title mb-3">
+            <h2 class="h5 fw-bold mb-1">文件与命名</h2>
+            <p class="small text-secondary mb-0">决定下载文件的名称格式。</p>
+        </div>
+        <div class="row g-3">
+            <div class="col-md-8">
+                <label for="filename_pattern" class="form-label">文件名模板</label>
+                <input type="text" class="form-control" id="filename_pattern" placeholder="例如：{date} {title}">
+                <div class="setting-help mt-2">支持：{creator} 创作者、{date} 日期、{title} 标题、{id} 作品 ID；过长的文件名会自动截短到 100 个字符。</div>
+            </div>
+            <div class="col-md-4">
+                <label for="filename_separator" class="form-label">替换分隔符</label>
+                <input type="text" class="form-control" id="filename_separator" placeholder="_">
+                <div class="setting-help mt-2">用于替换文件名中的路径分隔符。</div>
+            </div>
+        </div>
+    </section>
+
+    <section class="mt-5">
+        <div class="section-title mb-3">
+            <h2 class="h5 fw-bold mb-1">视频分卷</h2>
+            <p class="small text-secondary mb-0">按发布时间排列视频，并分批保存到独立子文件夹。</p>
+        </div>
+        <div class="row g-3">
+            <div class="col-12">
+                <div class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" role="switch" id="season_enabled">
+                    <label class="form-check-label fw-semibold" for="season_enabled">启用视频分卷文件夹</label>
+                </div>
+            </div>
+            <div class="col-md-5">
+                <label for="season_pattern" class="form-label">文件夹命名模板</label>
+                <input type="text" class="form-control" id="season_pattern" placeholder="S{number:02d}">
+                <div class="setting-help mt-2"><code>{number}</code> 是卷号；默认生成 S01、S02。</div>
+            </div>
+            <div class="col-md-3">
+                <label for="season_size" class="form-label">每卷作品数</label>
+                <input type="number" class="form-control" id="season_size" min="1" max="500">
+                <div class="setting-help mt-2">默认每个文件夹 20 个。</div>
+            </div>
+            <div class="col-md-4">
+                <label for="season_order" class="form-label">分卷顺序</label>
+                <select class="form-select" id="season_order">
+                    <option value="oldest">最早作品从 S01 开始</option>
+                    <option value="newest">最新作品从 S01 开始</option>
+                </select>
+            </div>
+        </div>
+    </section>
+
+    <section class="mt-5">
+        <div class="section-title mb-3 d-flex align-items-end justify-content-between gap-3">
+            <div>
+                <h2 class="h5 fw-bold mb-1">访问与下载</h2>
+                <p class="small text-secondary mb-0">令牌只保存在本机，不会在页面中回显。</p>
+            </div>
+            <span class="token-state" id="tokenState">正在检查令牌</span>
+        </div>
+        <div class="row g-3">
+            <div class="col-md-8">
+                <label for="auth_token" class="form-label">MyFans 令牌</label>
+                <input type="password" class="form-control" id="auth_token"
+                       placeholder="留空表示保留当前令牌" autocomplete="new-password">
+                <div class="setting-help mt-2">填写浏览器 Cookie 中的 <code>_mfans_token</code> 原始值即可。</div>
+            </div>
+            <div class="col-md-4">
+                <label for="thread_count" class="form-label">同时下载作品数</label>
+                <input type="number" class="form-control" id="thread_count" min="1" max="20">
+                <div class="setting-help mt-2">网络不稳定时建议设置为 1。</div>
+            </div>
+            <div class="col-12">
+                <div class="form-check form-switch pt-2">
+                    <input class="form-check-input" type="checkbox" role="switch" id="write_metadata">
+                    <label class="form-check-label fw-semibold" for="write_metadata">同时生成 JSON 元数据文件</label>
+                </div>
+            </div>
+            <div class="col-12">
+                <div class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" role="switch" id="download_poster">
+                    <label class="form-check-label fw-semibold" for="download_poster">下载视频封面并转换为 JPG</label>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <div class="d-flex flex-column flex-sm-row align-items-sm-center gap-3 mt-5">
+        <button type="submit" class="btn btn-brand px-4" id="saveBtn">
+            <span class="spinner-border spinner-border-sm me-2 d-none" id="saveSpinner" aria-hidden="true"></span>
+            保存设置
+        </button>
+        <div class="save-message text-secondary" id="saveMessage" role="status"></div>
+    </div>
+</form>
