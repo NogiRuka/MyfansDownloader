@@ -679,6 +679,30 @@
         }
     });
 
+    function connectProgress() {
+        if (eventSource) eventSource.close();
+        eventSource = new EventSource('/progress');
+        eventSource.onopen = () => setRunning(true);
+        eventSource.onmessage = event => {
+            if (event.data === 'DONE') {
+                appendLog('任务执行结束。');
+                eventSource.close();
+                eventSource = null;
+                setRunning(false);
+                loadStatus();
+                loadCreatorPosts();
+                return;
+            }
+            appendLog(event.data);
+        };
+        eventSource.onerror = () => {
+            if (eventSource) eventSource.close();
+            eventSource = null;
+            appendLog('进度连接已断开，正在检查任务状态。');
+            window.setTimeout(loadStatus, 1500);
+        };
+    }
+
     document.getElementById('downloadForm').addEventListener('submit', async event => {
         event.preventDefault();
         const single = elements.downloadType.value === 'single';
@@ -731,25 +755,7 @@
             return;
         }
 
-        eventSource = new EventSource('/progress');
-        eventSource.onmessage = event => {
-            if (event.data === 'DONE') {
-                appendLog('任务执行结束。');
-                eventSource.close();
-                eventSource = null;
-                setRunning(false);
-                loadStatus();
-                loadCreatorPosts();
-                return;
-            }
-            appendLog(event.data);
-        };
-        eventSource.onerror = () => {
-            if (eventSource) eventSource.close();
-            eventSource = null;
-            appendLog('进度连接已断开。');
-            setRunning(false);
-        };
+        connectProgress();
     });
 
     async function loadStatus() {
@@ -757,10 +763,23 @@
             const response = await fetch('/status');
             const status = await response.json();
             const translations = { pending: '等待中', in_progress: '下载中', completed: '已完成', failed: '失败' };
-            Object.entries(status.downloads || {}).forEach(([postId, info]) => {
-                const progressText = info.segments_total ? `（${info.segments_downloaded}/${info.segments_total} 个分片）` : '';
+            const activeDownloads = Object.entries(status.downloads || {}).filter(([, info]) => info.status === 'in_progress');
+            activeDownloads.forEach(([postId, info]) => {
+                let progressText = '';
+                if (info.segments_total === 100) {
+                    progressText = `（${info.segments_downloaded}%）`;
+                } else if (info.segments_total) {
+                    progressText = `（${info.segments_downloaded}/${info.segments_total} 个分片）`;
+                }
                 appendLog(`作品 ${postId}：${translations[info.status] || info.status} ${progressText}`.trim());
             });
+            if (status.running && !eventSource) {
+                setRunning(true);
+                appendLog('检测到正在运行的下载任务，已重新连接实时进度。');
+                connectProgress();
+            } else if (!status.running) {
+                setRunning(false);
+            }
         } catch (error) {
             appendLog('暂时无法读取历史任务状态。');
         }

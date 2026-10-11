@@ -72,6 +72,17 @@ class DownloadStateTests(unittest.TestCase):
             self.assertEqual(pending["downloads"]["abc"]["status"], "pending")
             self.assertNotIn("abc", pending["completed_files"])
 
+    def test_progress_updates_total_and_completed_amount(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            state = DownloadState(state_dir=tmp)
+            state.add_download("abc", status="in_progress")
+
+            state.update_progress("abc", 37, 100)
+
+            progress = state.get_progress("abc")
+            self.assertEqual(progress["segments_downloaded"], 37)
+            self.assertEqual(progress["segments_total"], 100)
+
 
 if __name__ == "__main__":
     unittest.main()

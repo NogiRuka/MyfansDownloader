@@ -48,6 +48,12 @@ class FlaskRouteTests(unittest.TestCase):
         self.assertEqual(payload["season_size"], 20)
         self.assertNotIn("auth_token", payload)
 
+    def test_status_reports_if_a_download_is_running(self):
+        resp = self.client.get("/status")
+
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn("running", resp.get_json())
+
     def test_download_requires_target(self):
         resp = self.client.post("/download", json={})
         self.assertEqual(resp.status_code, 400)

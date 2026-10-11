@@ -44,7 +44,9 @@ def index():
 
 @app.route("/status")
 def get_status():
-    return jsonify(download_state.get_serializable_state())
+    state = download_state.get_serializable_state()
+    state["running"] = download_lock.locked()
+    return jsonify(state)
 
 
 @app.route("/download", methods=["POST"])

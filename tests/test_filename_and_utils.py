@@ -5,6 +5,7 @@ import os
 import tempfile
 import unittest
 from datetime import datetime
+from io import StringIO
 from pathlib import Path
 from unittest.mock import patch
 
@@ -25,7 +26,7 @@ from scripts.api import (
     videos_from_payload,
 )
 from scripts.filename_utils import generate_filename, generate_metadata, generated_filenames
-from scripts.hls import pick_master_variant
+from scripts.hls import _ffmpeg_progress_message, ffmpeg_download, pick_master_variant
 from scripts.paths import normalize_output_dir
 from scripts.utils import (
     clean_filename,
@@ -254,6 +255,51 @@ class MasterPlaylistTests(unittest.TestCase):
         self.assertEqual(chosen.uri, "720p.m3u8")
         best = pick_master_variant(playlist, None)
         self.assertEqual(best.uri, "1080p.m3u8")
+
+
+class FfmpegProgressTests(unittest.TestCase):
+    def test_progress_message_contains_percent_time_and_speed(self):
+        message, percent = _ffmpeg_progress_message("post-1", 30, 120, "2.0x")
+
+        self.assertEqual(percent, 25)
+        self.assertIn("视频进度 post-1：25%", message)
+        self.assertIn("00:00:30", message)
+        self.assertIn("2.0x", message)
+
+    def test_ffmpeg_download_emits_streamed_progress(self):
+        class FakeProcess:
+            def __init__(self):
+                self.stdout = StringIO(
+                    "out_time_us=60000000\nspeed=1.5x\nprogress=continue\n"
+                    "out_time_us=120000000\nspeed=1.0x\nprogress=end\n"
+                )
+                self.stderr = StringIO("")
+
+            def poll(self):
+                return None
+
+            def kill(self):
+                return None
+
+            def wait(self):
+                return 0
+
+        messages = []
+        with patch("scripts.hls.subprocess.Popen", return_value=FakeProcess()), patch(
+            "scripts.hls.verify_video_file", return_value=True
+        ):
+            result = ffmpeg_download(
+                "https://cdn/video.m3u8",
+                "video.mp4",
+                {},
+                post_id="post-1",
+                progress=messages.append,
+                duration_seconds=120,
+            )
+
+        self.assertTrue(result)
+        self.assertTrue(any("50%" in message for message in messages))
+        self.assertTrue(any("100%" in message for message in messages))
 
 
 if __name__ == "__main__":

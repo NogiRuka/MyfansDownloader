@@ -63,12 +63,14 @@ class DownloadState:
             }
             self.save_state()
 
-    def update_progress(self, post_id, segments_downloaded):
+    def update_progress(self, post_id, segments_downloaded, segments_total=None):
         with self._lock:
             entry = self.state["downloads"].get(str(post_id))
             if not entry:
                 return
             entry["segments_downloaded"] = segments_downloaded
+            if segments_total is not None:
+                entry["segments_total"] = segments_total
             entry["last_updated"] = datetime.now().isoformat()
             self.save_state()
 

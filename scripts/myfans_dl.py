@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 import sys
 from io import BytesIO
 from pathlib import Path
@@ -341,6 +342,21 @@ def process_video_post(
 
         def on_progress(message: str) -> None:
             emit(progress_queue, message)
+            if not download_state:
+                return
+            ffmpeg_match = re.search(r"视频进度 .*?：(\d+)%", message)
+            segment_total_match = re.search(r"共需下载 (\d+) 个视频分片", message)
+            segment_progress_match = re.search(r"分片进度：(\d+)/(\d+)", message)
+            if ffmpeg_match:
+                download_state.update_progress(post_id, int(ffmpeg_match.group(1)), 100)
+            elif segment_total_match:
+                download_state.update_progress(post_id, 0, int(segment_total_match.group(1)))
+            elif segment_progress_match:
+                download_state.update_progress(
+                    post_id,
+                    int(segment_progress_match.group(1)),
+                    int(segment_progress_match.group(2)),
+                )
 
         success = download_stream(
             chosen["url"],

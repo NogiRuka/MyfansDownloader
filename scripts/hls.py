@@ -6,6 +6,7 @@ import os
 import shutil
 import subprocess
 import tempfile
+import threading
 import time
 import uuid
 from typing import Callable, Dict, List, Optional, Tuple
@@ -38,7 +39,38 @@ def _ffmpeg_headers(headers: Dict[str, str]) -> str:
     return "\r\n".join(parts) + "\r\n"
 
 
-def ffmpeg_download(url: str, output_file: str, headers: Dict[str, str]) -> bool:
+def _format_elapsed(seconds: float) -> str:
+    seconds = max(0, int(seconds))
+    hours, remainder = divmod(seconds, 3600)
+    minutes, seconds = divmod(remainder, 60)
+    return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+
+
+def _ffmpeg_progress_message(
+    post_id: str,
+    elapsed_seconds: float,
+    duration_seconds: Optional[float],
+    speed: str,
+) -> Tuple[str, Optional[int]]:
+    details = f"已处理 {_format_elapsed(elapsed_seconds)}"
+    percent = None
+    if duration_seconds and duration_seconds > 0:
+        percent = min(99, max(0, int(elapsed_seconds / duration_seconds * 100)))
+        details = f"{percent}%（{details}"
+        details += f"，速度 {speed}）" if speed else "）"
+    elif speed:
+        details += f"，速度 {speed}"
+    return f"视频进度 {post_id}：{details}", percent
+
+
+def ffmpeg_download(
+    url: str,
+    output_file: str,
+    headers: Dict[str, str],
+    post_id: str = "",
+    progress: ProgressCb = None,
+    duration_seconds: Optional[float] = None,
+) -> bool:
     os.makedirs(os.path.dirname(output_file) or ".", exist_ok=True)
     header_arg = _ffmpeg_headers(headers)
     user_agent = headers.get("user-agent") or headers.get("User-Agent") or "Mozilla/5.0"
@@ -48,6 +80,9 @@ def ffmpeg_download(url: str, output_file: str, headers: Dict[str, str]) -> bool
             "-y",
             "-loglevel",
             "error",
+            "-nostats",
+            "-progress",
+            "pipe:1",
             "-headers",
             header_arg,
             "-user_agent",
@@ -65,6 +100,9 @@ def ffmpeg_download(url: str, output_file: str, headers: Dict[str, str]) -> bool
             "-y",
             "-loglevel",
             "error",
+            "-nostats",
+            "-progress",
+            "pipe:1",
             "-headers",
             header_arg,
             "-user_agent",
@@ -79,17 +117,60 @@ def ffmpeg_download(url: str, output_file: str, headers: Dict[str, str]) -> bool
         ],
     ]
     for cmd in commands:
+        process = None
+        timed_out = False
+
+        def stop_process() -> None:
+            nonlocal timed_out
+            timed_out = True
+            if process and process.poll() is None:
+                process.kill()
+
         try:
-            result = subprocess.run(
+            process = subprocess.Popen(
                 cmd,
-                capture_output=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
                 text=True,
-                timeout=FFMPEG_DOWNLOAD_TIMEOUT,
+                encoding="utf-8",
+                errors="replace",
             )
+            timer = threading.Timer(FFMPEG_DOWNLOAD_TIMEOUT, stop_process)
+            timer.daemon = True
+            timer.start()
+            progress_values: Dict[str, str] = {}
+            last_emit = 0.0
+            if process.stdout:
+                for raw_line in process.stdout:
+                    key, separator, value = raw_line.strip().partition("=")
+                    if not separator:
+                        continue
+                    progress_values[key] = value
+                    if key != "progress":
+                        continue
+                    now = time.monotonic()
+                    if now - last_emit < 2 and value != "end":
+                        continue
+                    elapsed_us = progress_values.get("out_time_us") or progress_values.get("out_time_ms") or "0"
+                    try:
+                        elapsed_seconds = int(elapsed_us) / 1_000_000
+                    except ValueError:
+                        elapsed_seconds = 0
+                    message, _ = _ffmpeg_progress_message(
+                        post_id,
+                        elapsed_seconds,
+                        duration_seconds,
+                        progress_values.get("speed", ""),
+                    )
+                    _notify(progress, message)
+                    last_emit = now
+            return_code = process.wait()
+            timer.cancel()
+            stderr = process.stderr.read() if process.stderr else ""
         except FileNotFoundError:
             logger.error("ffmpeg is not installed or not on PATH")
             return False
-        except subprocess.TimeoutExpired:
+        if timed_out:
             logger.error("ffmpeg download timed out after %s seconds", FFMPEG_DOWNLOAD_TIMEOUT)
             if os.path.exists(output_file):
                 try:
@@ -97,10 +178,12 @@ def ffmpeg_download(url: str, output_file: str, headers: Dict[str, str]) -> bool
                 except OSError:
                     pass
             continue
-        if result.returncode == 0 and verify_video_file(output_file):
+        if return_code == 0 and verify_video_file(output_file):
+            if duration_seconds:
+                _notify(progress, f"视频进度 {post_id}：100%（下载完成）")
             return True
-        if result.stderr:
-            logger.warning("ffmpeg failed: %s", result.stderr.strip()[:500])
+        if stderr:
+            logger.warning("ffmpeg failed: %s", stderr.strip()[:500])
         if os.path.exists(output_file):
             try:
                 os.remove(output_file)
@@ -192,7 +275,15 @@ def python_hls_download(
     playlist, playlist_url = resolve_media_playlist(session, url, headers, requested_height)
     if _playlist_is_encrypted(playlist):
         _notify(progress, "检测到加密播放列表，改用 FFmpeg 下载。")
-        return ffmpeg_download(playlist_url, output_file, headers)
+        duration_seconds = sum(float(segment.duration or 0) for segment in playlist.segments)
+        return ffmpeg_download(
+            playlist_url,
+            output_file,
+            headers,
+            post_id=post_id,
+            progress=progress,
+            duration_seconds=duration_seconds,
+        )
 
     output_folder = os.path.dirname(output_file) or "."
     temp_root = tempfile.mkdtemp(prefix=f"m3u8_{uuid.uuid4().hex[:8]}_", dir=output_folder)
@@ -303,10 +394,28 @@ def download_stream(
             pass
 
     last_error = None
+    duration_seconds = None
+    try:
+        playlist, _ = resolve_media_playlist(
+            thread_session(headers),
+            url,
+            headers,
+            requested_height,
+        )
+        duration_seconds = sum(float(segment.duration or 0) for segment in playlist.segments)
+    except (requests.RequestException, ValueError, TypeError):
+        pass
     for attempt in range(max_retries):
         try:
             _notify(progress, f"正在下载视频 {post_id}（第 {attempt + 1}/{max_retries} 次尝试）")
-            if ffmpeg_download(url, output_file, headers):
+            if ffmpeg_download(
+                url,
+                output_file,
+                headers,
+                post_id=post_id,
+                progress=progress,
+                duration_seconds=duration_seconds,
+            ):
                 return True
             _notify(progress, "FFmpeg 直接下载失败，改用 Python HLS 分片下载。")
             if python_hls_download(
