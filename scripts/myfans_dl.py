@@ -3,9 +3,10 @@ from __future__ import annotations
 import os
 import re
 import sys
+import threading
 from io import BytesIO
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 from urllib.parse import urlparse
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -299,6 +300,7 @@ def process_video_post(
     download_state=None,
     target_subfolder: Optional[str] = None,
     download_poster: bool = True,
+    progress_observer: Optional[Callable[[int], None]] = None,
 ) -> bool:
     try:
         if download_state and download_state.is_completed(post_id):
@@ -350,22 +352,31 @@ def process_video_post(
                 pass
 
         def on_progress(message: str) -> None:
-            emit(progress_queue, message)
-            if not download_state:
-                return
             ffmpeg_match = re.search(r"视频进度 .*?：(\d+)%", message)
             segment_total_match = re.search(r"共需下载 (\d+) 个视频分片", message)
             segment_progress_match = re.search(r"分片进度：(\d+)/(\d+)", message)
+            is_repeating_progress = message.startswith("视频进度 ") or bool(segment_progress_match)
+            if is_repeating_progress:
+                if progress_queue is not None:
+                    progress_queue.put(message)
+            else:
+                emit(progress_queue, message)
             if ffmpeg_match:
-                download_state.update_progress(post_id, int(ffmpeg_match.group(1)), 100)
+                percent = int(ffmpeg_match.group(1))
+                if progress_observer:
+                    progress_observer(percent)
+                if download_state:
+                    download_state.update_progress(post_id, percent, 100)
             elif segment_total_match:
-                download_state.update_progress(post_id, 0, int(segment_total_match.group(1)))
+                if download_state:
+                    download_state.update_progress(post_id, 0, int(segment_total_match.group(1)))
             elif segment_progress_match:
-                download_state.update_progress(
-                    post_id,
-                    int(segment_progress_match.group(1)),
-                    int(segment_progress_match.group(2)),
-                )
+                downloaded = int(segment_progress_match.group(1))
+                total_segments = int(segment_progress_match.group(2))
+                if progress_observer and total_segments:
+                    progress_observer(int(downloaded / total_segments * 100))
+                if download_state:
+                    download_state.update_progress(post_id, downloaded, total_segments)
 
         success = download_stream(
             chosen["url"],
@@ -439,12 +450,22 @@ def download_videos_concurrently(
     total = len(post_ids)
     emit(progress_queue, f"准备下载 {total} 个视频作品。")
     workers = max(1, int(max_workers or 1))
+    progress_values = {str(post_id): 0 for post_id in post_ids}
+    progress_lock = threading.Lock()
     progress_bar = tqdm(
-        total=total,
-        desc="下载视频",
-        unit="个",
-        disable=progress_queue is not None,
+        total=max(1, total * 100),
+        desc="下载总进度",
+        bar_format="{desc}: {percentage:3.0f}%|{bar}|",
+        ncols=72,
+        disable=not sys.stderr.isatty(),
     )
+
+    def update_total_progress(post_id: str, percent: int) -> None:
+        with progress_lock:
+            progress_values[str(post_id)] = min(100, max(0, int(percent)))
+            progress_bar.n = sum(progress_values.values())
+            progress_bar.refresh()
+
     if workers == 1:
         for post_id in post_ids:
             process_video_post(
@@ -457,8 +478,11 @@ def download_videos_concurrently(
                 download_state,
                 target_subfolder=(post_folders or {}).get(str(post_id)),
                 download_poster=download_poster,
+                progress_observer=lambda percent, current_id=str(post_id): update_total_progress(
+                    current_id, percent
+                ),
             )
-            progress_bar.update(1)
+            update_total_progress(str(post_id), 100)
     else:
         from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -474,16 +498,22 @@ def download_videos_concurrently(
                 download_state,
                 target_subfolder=(post_folders or {}).get(str(post_id)),
                 download_poster=download_poster,
+                progress_observer=lambda percent, current_id=str(post_id): update_total_progress(
+                    current_id, percent
+                ),
             )
 
         with ThreadPoolExecutor(max_workers=workers) as executor:
-            futures = [executor.submit(worker, post_id) for post_id in post_ids]
+            futures = {
+                executor.submit(worker, post_id): str(post_id)
+                for post_id in post_ids
+            }
             for future in as_completed(futures):
                 try:
                     future.result()
                 except Exception as exc:
                     emit(progress_queue, f"下载过程中发生错误：{exc}", "error")
-                progress_bar.update(1)
+                update_total_progress(futures[future], 100)
     progress_bar.close()
     emit(progress_queue, "视频下载流程已结束。")
 
