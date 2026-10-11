@@ -69,12 +69,12 @@
     .status-failed { color: #b42318; background: #feeceb; }
     .season-picker { display: flex; align-items: center; justify-content: space-between; gap: 1rem; min-height: 3rem; padding: .65rem .8rem; border: 1px solid var(--line); border-radius: .85rem; background: rgba(255, 255, 255, .86); }
     .season-groups { padding: .8rem; }
-    .season-group { margin-bottom: .7rem; overflow: hidden; border: 1px solid var(--line); border-radius: 1rem !important; background: #fff; }
+    .season-groups > .season-group { margin-bottom: .7rem; overflow: hidden; border: 1px solid var(--line); border-radius: 1rem !important; background: #fff; }
     .season-group:last-child { margin-bottom: 0; }
     .season-group .accordion-header { transition: background-color .18s ease; }
     .season-group .accordion-button { gap: .8rem; padding: 1rem 1.1rem; background: transparent; box-shadow: none; }
     .season-group .accordion-button:not(.collapsed) { color: var(--ink); background: var(--brand-soft); }
-    .season-group.season-selected { border-color: rgba(255, 58, 119, .32); }
+    .season-groups > .season-group.season-selected { border-color: rgba(255, 58, 119, .32); }
     .season-group.season-selected > .accordion-header,
     .season-group.season-selected > .accordion-header .accordion-button { background: var(--brand-soft); }
     .season-select { position: relative; z-index: 2; flex: 0 0 auto; width: 1.1rem; height: 1.1rem; margin: 0; }
